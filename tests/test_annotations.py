@@ -142,5 +142,18 @@ class AnnotationTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
 
 
+class ValidateScreenshotTests(unittest.TestCase):
+    def test_validate_screenshot_rejects_empty_unicode_named_file(self):
+        from issue_delivery_orchestrator.annotations import validate_screenshot
+        from issue_delivery_orchestrator.errors import OrchestrationError
+
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "空のスクリーンショット.png"
+            source.write_bytes(b"")
+
+            with self.assertRaisesRegex(OrchestrationError, "Invalid screenshot"):
+                validate_screenshot(source)
+
+
 if __name__ == "__main__":
     unittest.main()
