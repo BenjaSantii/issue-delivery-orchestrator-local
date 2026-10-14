@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from issue_delivery_orchestrator.annotations import annotate_png, normalize_callouts
+from issue_delivery_orchestrator.annotations import (
+    annotate_png,
+    normalize_callouts,
+    validate_screenshot,
+)
 from issue_delivery_orchestrator.errors import OrchestrationError
 from issue_delivery_orchestrator.png_codec import PngImage, decode_png, encode_png
 
@@ -140,6 +144,17 @@ class AnnotationTests(unittest.TestCase):
 
             self.assertTrue(target.read_bytes().startswith(b"\x89PNG"))
             self.assertEqual(source.read_bytes(), original)
+
+
+    def test_validate_screenshot_reports_empty_unicode_named_file(self):
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "空 screenshot.png"
+            source.write_bytes(b"")
+
+            with self.assertRaisesRegex(
+                OrchestrationError, r"Invalid screenshot .*空 screenshot\.png"
+            ):
+                validate_screenshot(source)
 
 
 if __name__ == "__main__":
