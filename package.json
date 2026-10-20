@@ -5,6 +5,7 @@
   "packageManager": "pnpm@9.14.2",
   "scripts": {
     "start": "python3 scripts/issue-delivery",
-    "test": "PYTHONPATH=src python3 -m unittest discover -s tests -v"
+    "test": "PYTHONPATH=src python3 -m unittest discover -s tests -v",
+    "test:playwright-review": "node --test tests/playwright-review/mobile.test.mjs"
   }
 }

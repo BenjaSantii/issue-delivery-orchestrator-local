@@ -165,7 +165,7 @@ def _verification(
         raise OrchestrationError("Evidence publication requires UI verification status PASS")
     selected_provider = review_method(state)
     declared_provider = str(verification.get("provider") or "").strip()
-    if declared_provider and declared_provider not in {"cua-driver", "codex-browser", "adb"}:
+    if declared_provider and declared_provider not in {"cua-driver", "codex-browser", "playwright", "adb"}:
         raise OrchestrationError(
             f"Evidence verification has unsupported provider {declared_provider}"
         )
@@ -176,7 +176,7 @@ def _verification(
         )
     if not declared_provider and selected_provider != "cua-driver":
         raise OrchestrationError(
-            "codex-browser evidence must declare provider 'codex-browser'"
+            f"{selected_provider} evidence must declare provider '{selected_provider}'"
         )
     native_review = None
     if declared_provider == "adb":

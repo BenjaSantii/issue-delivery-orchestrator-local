@@ -5,13 +5,17 @@ slicing, implementation, focused validation, manual UI review, pull request crea
 automated review convergence.
 
 The plugin is self-contained: its orchestration engine and workflow skills live in this repository.
-It supports three fixed workspace modes. Claude Code uses the host-independent `vanilla` mode:
+It supports four fixed workspace modes. Claude Code uses the host-independent `vanilla` mode,
+or `conductor` inside a Conductor Cloud workspace:
 
 - `codex`: work in a Codex app worktree and review UI through the in-app Browser, with headless
   Playwright assistance limited to demonstrated `file-upload` or `hover` capability gaps.
 - `superset`: adopt a Superset worktree and review UI through Cua Driver in a dedicated browser.
 - `vanilla`: adopt any user-prepared checkout or worktree from Codex CLI, without depending on a
   workspace host, and review UI through Cua Driver.
+- `conductor`: adopt a Conductor Cloud workspace (`CONDUCTOR_IS_LOCAL=0`) and review UI with
+  Playwright headless Chromium inside the VM; phone stories go to the `mobile-web-reviewer`
+  agent. See [Conductor Cloud](#conductor-cloud).
 
 The orchestrator never creates a worktree. Start the session in a worktree prepared by Codex,
 Superset, or the user's normal Git tooling. Vanilla users must run the repository's local setup
@@ -30,6 +34,9 @@ cleaned when resumed.
 - `$issue-delivery-blocker-triage`
 - `$issue-delivery-cua-review`
 - `$issue-delivery-browser-review`
+- `$issue-delivery-playwright-review`
+- `$issue-delivery-mobile-web-review` (also packaged as the Claude Code agent `mobile-web-reviewer`)
+- `$issue-delivery-cloud-launch`
 
 The Browser skill, Figma connector, GitHub CLI, Cua Driver, Playwright, and the target repository's
 runtime commands remain environment capabilities. Codex Browser review is available only in Codex
@@ -303,3 +310,48 @@ corepack pnpm test
 ```
 
 The project requires Python 3.9+ and has no runtime Python package dependencies.
+
+## QA Script
+
+New specs carry a `## QA Script`: the approved cases manual revision executes against the running
+system (happy paths per user story, edge cases, authorization, failures and real concurrency).
+The engine rejects a spec whose script misses a user story's happy path, an applicable risk, or
+the committed race test of a concurrency case. Manual revision records
+`validation/qa-results.json`, and `publish-qa-results` validates it against the approved script and
+posts a `Resultado QA` comment in Linear (and in the PR once it exists) with screenshots and
+command output. The `manual-revision` checkpoint requires every case to be `PASS`, or `WAIVED`
+with the user's own instruction. Specs approved before this section keep the previous flow. See
+`skills/issue-delivery-orchestrator/references/qa-script.md`.
+
+## Conductor Cloud
+
+Issues whose spec and tickets are already approved can run end to end in a Conductor Cloud
+workspace. From your machine:
+
+```bash
+python3 scripts/issue-delivery LOG-123 --base test cloud-launch --toolbox-profile benjasanti
+python3 scripts/issue-delivery LOG-123 --base test cloud-launch --toolbox-profile benjasanti --confirm
+```
+
+The first command checks the issue (approved `Spec ID` and `Ticket ID` blocks, state, open
+blockers, stack parent) and prints the plan without creating anything. `--confirm` creates the
+workspace with a bootstrap session that waits for setup, installs or checks the toolbox and replies
+`IDO-BOOTSTRAP READY`. The launcher polls that transcript and then starts a separate delivery
+session, because plugins only load when an agent process starts. After a timeout, resume with
+`cloud-launch --confirm --workspace <id>`. Only `CODEX_TOOLBOX_PROFILE`,
+`LINEAR_EXPECTED_EMAIL`, and `GITHUB_EXPECTED_LOGIN` are passed; configure `LINEAR_API_KEY` as a
+Conductor project environment variable, because the VM has no macOS Keychain.
+`ISSUE_DELIVERY_TOOLBOX_PROFILE` can replace `--toolbox-profile`.
+
+Inside the workspace the agent prepares the VM following
+`skills/issue-delivery-orchestrator/references/conductor-cloud.md` and starts the run with
+`--mode conductor`. UI stories are verified with `issue-delivery-playwright-review`; phone stories
+use `mobile-web-reviewer`, which emulates 360×800 and 390×844 touch devices, checks that the
+on-screen keyboard does not hide focused fields or the primary action, and measures drag and swipe
+smoothness. Criteria that only a native device can show are reported as `NATIVE-ONLY`.
+
+The mobile helpers have their own browser test suite:
+
+```bash
+PLAYWRIGHT_WORKTREE=/path/to/repo-with-playwright pnpm test:playwright-review
+```

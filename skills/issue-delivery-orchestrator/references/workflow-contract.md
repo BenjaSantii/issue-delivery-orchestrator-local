@@ -48,7 +48,7 @@ Toda petición de ajuste/corrección y todo reporte de comportamiento roto abre 
 
 El ledger debe declarar la superficie afectada y la evidencia mínima. El recibo de verificación debe registrar:
 
-- Provider `static`, `test`, `api-command`, `local-runtime`, `cua-driver`, `codex-browser` o `adb` nativo autorizado según [native-adb-evidence.md](native-adb-evidence.md).
+- Provider `static`, `test`, `api-command`, `local-runtime`, `cua-driver`, `codex-browser`, `playwright` o `adb` nativo autorizado según [native-adb-evidence.md](native-adb-evidence.md).
 - Texto o ID del reporte.
 - Escenario `REPAIR-<n>` o historias afectadas.
 - SHA exacto verificado.
@@ -144,7 +144,8 @@ Las evidencias de GitHub permanecen restringidas por los permisos del repositori
 ## Persistencia
 
 - Todo run nuevo exige `--worktree`. Un `--mode` explícito tiene prioridad. Sin él, el CLI detecta
-  Codex o Superset mediante `SUPERSET_WORKSPACE_PATH`, raíces configuradas o componentes
+  Conductor Cloud mediante `CONDUCTOR_IS_LOCAL=0`, y Codex o Superset mediante
+  `SUPERSET_WORKSPACE_PATH`, raíces configuradas o componentes
   inequívocos de la ruta; sin coincidencias selecciona Vanilla con
   `modeSource=vanilla-fallback`. Una detección contradictoria bloquea. El modo no cambia después de
   crear el estado.
@@ -159,8 +160,12 @@ Las evidencias de GitHub permanecen restringidas por los permisos del repositori
   base, un detached HEAD seguro o la rama de la issue, conecta la rama de Linear y fija
   `reviewer.method=cua-driver`. Si el modo fue inferido, bloquear antes de descartar cambios
   trackeados o archivos no ignorados; exigir un checkout limpio o selección explícita de Vanilla.
+- Modo `conductor`: Conductor Cloud crea el workspace en su propia rama inicial desde la base
+  elegida. El CLI lo adopta mediante `--worktree`, acepta esa rama si su historia está contenida en
+  la base o en la rama de la issue, conecta la rama de Linear y fija `reviewer.method=playwright`.
+  Preparar la VM según [conductor-cloud.md](conductor-cloud.md).
 - Claude Code usa modo `vanilla` y `cua-driver` salvo que el checkout contenga una señal válida de
-  Superset. Nunca seleccionar `codex` sólo porque el plugin también incluya manifiesto para Codex.
+  Superset o de Conductor Cloud. Nunca seleccionar `codex` sólo porque el plugin también incluya manifiesto para Codex.
 - El orquestador nunca crea worktrees ni delega el run a un thread que solicite otro. Prohibir
   `create_thread` con entorno worktree, `git worktree add` y mecanismos equivalentes. Si el actual
   no puede adoptarse, bloquear y pedir al usuario que abra manualmente otro para que la superficie
@@ -172,7 +177,7 @@ Las evidencias de GitHub permanecen restringidas por los permisos del repositori
   dependencias, `.local-runtime` y cualquier otro archivo ignorado. Registrar el snapshot previo en
   `discardedInitialStatus` y exigir un status limpio después. No ejecutar esta limpieza al reanudar.
 - Browser sólo opera dentro de un run modo Codex abierto en la app. Cua opera en modo Superset o
-  Vanilla. Playwright headless puede asistir exclusivamente una story con brecha demostrada de
+  Vanilla. Playwright es el reviewer principal sólo en modo Conductor. En los demás modos, Playwright headless puede asistir exclusivamente una story con brecha demostrada de
   `file-upload` o `hover`, sobre el mismo SHA/runtime y con recibo bajo el run; el provider continúa
   siendo el reviewer principal. No cambiar provider o modo silenciosamente. Leer
   [headless-assistance.md](headless-assistance.md) y mantener compatibilidad con

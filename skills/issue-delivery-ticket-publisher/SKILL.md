@@ -55,6 +55,9 @@ Blocked by:
 ## User Stories Covered
 - US-...
 
+## QA Cases Covered
+- QA-...
+
 ## Validation
 - Run: `...`
 
@@ -75,6 +78,9 @@ not because implementation is difficult.
    fixed final UI-review phase into an implementation ticket.
    Every `Risk Catalog` row marked `Yes` must be covered by the `Coverage Delta` of the ticket that
    implements it, and every `Consumer inventory` row by the ticket named in `Handled by`.
+   Assign every `QA Script` case to exactly one ticket under `QA Cases Covered`: the ticket whose
+   change makes it pass. The ticket covering a `concurrency` case also implements the race test
+   named in its `Regression test` and lists it under `Coverage Delta` and `Validation`.
 4. Use unique sequential IDs, valid dependency references and at least one focused validation
    command per AFK ticket.
 5. Estimate each ticket's product lines from the files and patterns it will touch. When the sum

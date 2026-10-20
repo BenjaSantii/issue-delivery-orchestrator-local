@@ -10,6 +10,18 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .cloud_launch import (
+    build_launch,
+    conductor_cli,
+    conductor_project_id,
+    create_delivery_session,
+    create_workspace,
+    delivery_readiness,
+    first_session_id,
+    stack_parent_for,
+    wait_for_bootstrap,
+    workspace_id_from,
+)
 from .config import DEFAULT_CONFIG_HOME, Settings, settings
 from .credentials import CredentialProvider
 from .errors import IdentityMismatch, OrchestrationError, RunBlocked
@@ -31,6 +43,12 @@ from .pr_quality import (
     assert_validation_current,
     publish_validation,
     record_pre_review,
+)
+from .qa_script import (
+    approved_qa_cases,
+    qa_comment_body,
+    qa_comment_marker,
+    validate_qa_results,
 )
 from .linear import (
     LinearClient,
@@ -113,6 +131,33 @@ def parser() -> argparse.ArgumentParser:
         help="Read the live Linear issue and all comments with the personal API key",
     )
     actions.add_parser("status")
+    cloud = actions.add_parser(
+        "cloud-launch",
+        help="Check that the issue has approved spec/tickets and start it in Conductor Cloud",
+    )
+    cloud.add_argument(
+        "--toolbox-profile",
+        default=os.environ.get("ISSUE_DELIVERY_TOOLBOX_PROFILE", ""),
+        help="software-skills profile the cloud workspace installs",
+    )
+    cloud.add_argument("--agent", default="claude", choices=("claude", "codex"))
+    cloud.add_argument("--model", help="Model for the first Conductor session")
+    cloud.add_argument("--conductor-project", help="Conductor project ID")
+    cloud.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Create the workspace; without it the command only prints the plan",
+    )
+    cloud.add_argument(
+        "--workspace",
+        help="Resume a launch: wait for this workspace's bootstrap and start delivery",
+    )
+    cloud.add_argument(
+        "--wait-minutes",
+        type=float,
+        default=25,
+        help="How long to wait for the bootstrap session before giving up",
+    )
 
     reviewer = actions.add_parser(
         "reviewer-select",
@@ -154,6 +199,12 @@ def parser() -> argparse.ArgumentParser:
     linear_block = actions.add_parser("publish-linear-block")
     linear_block.add_argument("--block", required=True, choices=("spec", "tickets"))
     linear_block.add_argument("--body-file", type=Path, required=True)
+
+    qa = actions.add_parser(
+        "publish-qa-results",
+        help="Validate QA results against the approved QA Script and publish them",
+    )
+    qa.add_argument("--results", type=Path, required=True)
 
     evidence = actions.add_parser("publish-evidence")
     evidence.add_argument("--manifest", type=Path, required=True)
@@ -240,6 +291,8 @@ def main(argv: list[str] | None = None) -> int:
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.action == "read-linear-issue":
         return read_linear_issue(args.issue)
+    if args.action == "cloud-launch":
+        return cloud_launch(args)
 
     configuration = settings()
     repository = _repository(args.worktree, configuration.repository)
@@ -283,6 +336,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
                 state,
                 Path(state["worktree"]) / manifest,
             )
+            _require_published_qa(state, artifacts.get("qa-results"))
         if args.phase in {"pr-creation", "review-convergence"}:
             assert_validation_current(state)
         if args.phase == "review-convergence":
@@ -314,6 +368,11 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
         return _public_state(state)
     if args.action == "launch-browser":
+        if review_method(state) == "playwright":
+            raise RunBlocked(
+                "Dedicated Chrome is disabled in conductor mode; "
+                "verify the UI with issue-delivery-playwright-review"
+            )
         if review_method(state) != "cua-driver":
             raise RunBlocked(
                 "Dedicated Chrome is disabled in codex mode; "
@@ -350,6 +409,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return ensure_pull_request(state, args.body_file, args.title)
     if args.action == "publish-linear-block":
         return publish_linear_block(state, args.block, args.body_file)
+    if args.action == "publish-qa-results":
+        return publish_qa_results(state, args.results)
     if args.action == "publish-evidence":
         linear, _ = _verified_linear()
         github = GitHubClient(Path(state["worktree"]))
@@ -412,6 +473,89 @@ def read_linear_issue(identifier_or_url: str) -> dict[str, Any]:
     }
 
 
+def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
+    if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
+        raise RunBlocked("cloud-launch runs from your machine, not inside a cloud workspace")
+    if not args.toolbox_profile:
+        raise RunBlocked(
+            "Set ISSUE_DELIVERY_TOOLBOX_PROFILE or pass --toolbox-profile so the cloud "
+            "workspace installs this plugin"
+        )
+    configuration = settings()
+    # The launcher targets the configured product repository, not whichever workspace
+    # (for example a Superset session) the command happens to run from.
+    repository = _repository(configuration.repository, None)
+    linear, credential_source = _verified_linear()
+    readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
+    if readiness["problems"]:
+        raise RunBlocked("; ".join(readiness["problems"]))
+    stack_parent = stack_parent_for(readiness, args.stack_parent)
+    cli = conductor_cli()
+    project_id = args.conductor_project or conductor_project_id(cli, repository)
+    launch = build_launch(
+        readiness,
+        configuration,
+        repository,
+        base=args.base,
+        stack_parent=stack_parent,
+        agent=args.agent,
+        model=args.model,
+        toolbox_profile=args.toolbox_profile,
+        project_id=project_id,
+    )
+    plan = {
+        "credentialSource": credential_source,
+        "readiness": readiness,
+        "stackParent": stack_parent,
+        "conductor": cli,
+        "command": [cli, *launch["arguments"]],
+        "bootstrapMessage": launch["bootstrapMessage"],
+        "message": launch["message"],
+        "workspaceBase": launch["workspaceBase"],
+        "workspaceBaseBehindPrTarget": launch["behindTarget"],
+        "created": False,
+    }
+    if not args.confirm:
+        return plan
+
+    # Plugins load when an agent process starts. The first session installs and checks
+    # the toolbox; delivery runs in a second session started after it reports READY.
+    created = None
+    if args.workspace:
+        workspace_id = args.workspace
+    else:
+        created = create_workspace(cli, launch)
+        workspace_id = workspace_id_from(created)
+    bootstrap_session = first_session_id(cli, workspace_id, created)
+    outcome = wait_for_bootstrap(
+        cli,
+        bootstrap_session,
+        timeout_seconds=args.wait_minutes * 60,
+    )
+    resume = (
+        f"Resume with: issue-delivery {readiness['identifier']} cloud-launch "
+        f"--confirm --workspace {workspace_id}"
+    )
+    if outcome is None:
+        raise RunBlocked(
+            f"Workspace {workspace_id} did not finish its bootstrap within "
+            f"{args.wait_minutes:g} minutes. {resume}"
+        )
+    if outcome[0] == "FAILED":
+        raise RunBlocked(
+            f"Workspace {workspace_id} bootstrap failed: {outcome[1] or 'no cause given'}. "
+            f"Fix it in that workspace, then: {resume}"
+        )
+    delivery = create_delivery_session(cli, workspace_id, launch)
+    return {
+        **plan,
+        "created": True,
+        "workspaceId": workspace_id,
+        "bootstrapSessionId": bootstrap_session,
+        "deliverySession": delivery,
+    }
+
+
 def bootstrap(
     args: argparse.Namespace,
     repository: Path,
@@ -459,7 +603,8 @@ def bootstrap(
     if args.reviewer:
         raise RunBlocked(
             "New runs select their UI reviewer through --mode; "
-            "codex uses codex-browser; superset and vanilla use cua-driver"
+            "codex uses codex-browser; superset and vanilla use cua-driver; "
+            "conductor uses playwright"
         )
     if not requested_worktree:
         mode_hint = (
@@ -483,6 +628,13 @@ def bootstrap(
     workspace.fetch(args.base)
     if mode == "codex":
         worktree = workspace.adopt_codex(
+            requested_worktree,
+            issue.branch_name,
+            args.base,
+            issue.identifier,
+        )
+    elif mode == "conductor":
+        worktree = workspace.adopt_conductor(
             requested_worktree,
             issue.branch_name,
             args.base,
@@ -688,6 +840,73 @@ def publish_linear_block(
     }
 
 
+def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, Any]:
+    configuration = settings()
+    worktree = Path(state["worktree"])
+    results = validate_qa_results(state, _resolve_in_worktree(results_file, worktree))
+    if results is None:
+        raise RunBlocked("The approved spec has no QA Script; there are no QA results to publish")
+
+    linear, _ = _verified_linear()
+    issue = linear.issue(state["issue"]["identifier"])
+    asset_urls = {
+        screenshot: linear.upload_file(worktree / screenshot)
+        for case in results["cases"]
+        for screenshot in case["screenshots"]
+    }
+    body = qa_comment_body(state["runId"], results, asset_urls, worktree)
+    if configuration.linear_comments_enabled:
+        linear_target = {
+            "commentId": linear.upsert_comment(issue.id, qa_comment_marker(state["runId"]), body)
+        }
+    else:
+        linear.update_description(
+            issue.id,
+            upsert_marker_block(
+                issue.description,
+                marker_prefix=configuration.linear_marker_prefix,
+                block="qa-results",
+                body=body,
+            ),
+        )
+        linear_target = {"descriptionBlock": "qa-results"}
+
+    github_target = None
+    if state.get("pr"):
+        github = GitHubClient(worktree)
+        github.verify_identity()
+        marker = f"<!-- issue-delivery-qa:{state['runId']} -->"
+        github_target = {
+            "commentId": github.upsert_comment(
+                int(state["pr"]["number"]), marker, f"{marker}\n{body}"
+            )
+        }
+
+    state["qa"] = {
+        "verifiedCommit": results["verifiedCommit"],
+        "publishedAt": now(),
+        "cases": {case["id"]: case["status"] for case in results["cases"]},
+        "linear": linear_target,
+        "github": github_target,
+    }
+    save_state(state)
+    return {"published": True, "qa": state["qa"]}
+
+
+def _require_published_qa(state: dict[str, Any], results_artifact: str | None) -> None:
+    if approved_qa_cases(state) is None:
+        return
+    if not results_artifact:
+        raise RunBlocked("The approved spec has a QA Script; manual revision requires qa-results")
+    results = validate_qa_results(state, Path(state["worktree"]) / results_artifact)
+    published = (state.get("qa") or {}).get("verifiedCommit")
+    if published != results["verifiedCommit"]:
+        raise RunBlocked(
+            "Publish the QA results for the current commit with publish-qa-results "
+            "before completing manual revision"
+        )
+
+
 def final_cleanup(state: dict[str, Any], *, force: bool) -> dict[str, Any]:
     worktree = Path(state["worktree"])
     github = GitHubClient(worktree)
@@ -777,7 +996,7 @@ def _select_state(
 def _requested_worktree(explicit: Path | None, mode: str | None) -> Path | None:
     if explicit:
         return explicit
-    if mode in {"codex", "vanilla"}:
+    if mode in {"codex", "vanilla", "conductor"}:
         return None
     raw = os.environ.get("SUPERSET_WORKSPACE_PATH")
     return Path(raw) if raw else None
@@ -790,6 +1009,9 @@ def _new_run_mode(
 ) -> tuple[str, str]:
     if explicit:
         return explicit, "explicit"
+
+    if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
+        return "conductor", "conductor-cloud-environment"
 
     candidate = worktree.expanduser().resolve()
     superset_workspace = os.environ.get("SUPERSET_WORKSPACE_PATH", "").strip()
@@ -878,7 +1100,7 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
         "workspaceMode": (
             "adopted"
             if str(state.get("createdFrom", "")).startswith(
-                ("adopted:", "codex:", "vanilla:")
+                ("adopted:", "codex:", "vanilla:", "conductor:")
             )
             else "private"
         ),
@@ -931,6 +1153,14 @@ def _next_action(state: dict[str, Any]) -> str:
         return (
             "Launch the run-owned dedicated browser and verify the UI with "
             "Cua Driver from this checkout."
+        )
+    if (
+        state.get("currentPhase") == "manual-revision"
+        and run_mode(state) == "conductor"
+    ):
+        return (
+            "Verify the UI with issue-delivery-playwright-review from this "
+            "Conductor Cloud checkout; use mobile-web-reviewer for phone stories."
         )
     return f"Execute phase {state.get('currentPhase')} from the worktree."
 

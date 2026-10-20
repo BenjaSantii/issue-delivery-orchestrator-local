@@ -79,6 +79,8 @@ def _blank(value: str) -> bool:
 
 
 def lint_spec(markdown: str) -> list[str]:
+    from .qa_script import lint_qa_script
+
     errors: list[str] = []
     _require_table(markdown, "## Testing Decisions", TESTING_DECISIONS_HEADER, errors)
     rows = _require_table(markdown, "## Risk Catalog", RISK_CATALOG_HEADER, errors)
@@ -123,6 +125,7 @@ def lint_spec(markdown: str) -> list[str]:
                 "`### State model` must include an unknown/uncertain outcome state "
                 "because external-failure applies"
             )
+    errors += lint_qa_script(markdown)
     return errors
 
 

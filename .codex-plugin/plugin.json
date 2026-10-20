@@ -1,6 +1,6 @@
 {
   "name": "issue-delivery-orchestrator-local",
-  "version": "0.10.6+codex.20261013162154",
+  "version": "0.11.0+codex.20261020120000",
   "description": "Deliver Linear issues from an approved spec through implementation, UI verification, pull request creation, and automated review convergence.",
   "author": {
     "name": "benjaminlillo",
@@ -19,14 +19,16 @@
   "interface": {
     "displayName": "Issue Delivery Orchestrator Local",
     "shortDescription": "Deliver Linear issues through a verified PR.",
-    "longDescription": "A resumable delivery workflow for Codex, Superset, and standalone Vanilla worktrees, with bundled planning, implementation, UI review, evidence, and PR blocker-triage skills.",
+    "longDescription": "A resumable delivery workflow for Codex, Superset, standalone Vanilla, and Conductor Cloud worktrees, with bundled planning, implementation, UI review, evidence, and PR blocker-triage skills.",
     "developerName": "benjaminlillo / local customization",
     "category": "Productivity",
     "capabilities": [
       "Linear issue planning",
-      "Codex, Superset, and Vanilla worktree modes",
+      "Codex, Superset, Vanilla, and Conductor Cloud worktree modes",
       "Focused implementation validation",
       "Bounded headless UI capability fallback",
+      "Mobile web review with touch, keyboard, and gesture checks",
+      "Approved QA script execution with results in Linear",
       "UI evidence publication",
       "GitHub review convergence"
     ],

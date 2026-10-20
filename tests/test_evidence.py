@@ -86,6 +86,36 @@ class EvidenceVerificationTests(unittest.TestCase):
 
         self.assertEqual(receipt["provider"], "codex-browser")
 
+    def test_accepts_playwright_pass_for_conductor_run(self):
+        self.state["mode"] = {"name": "conductor"}
+        self.state["reviewer"] = {"method": "playwright"}
+
+        receipt = _verification(
+            self.manifest(provider="playwright"),
+            self.state,
+            self.worktree,
+        )
+
+        self.assertEqual(receipt["provider"], "playwright")
+
+    def test_conductor_run_requires_declared_playwright_provider(self):
+        self.state["mode"] = {"name": "conductor"}
+        self.state["reviewer"] = {"method": "playwright"}
+
+        with self.assertRaisesRegex(OrchestrationError, "must declare provider 'playwright'"):
+            _verification(self.manifest(), self.state, self.worktree)
+
+    def test_rejects_playwright_evidence_for_cua_run(self):
+        self.state["mode"] = {"name": "vanilla"}
+        self.state["reviewer"] = {"method": "cua-driver"}
+
+        with self.assertRaisesRegex(OrchestrationError, "provider mismatch"):
+            _verification(
+                self.manifest(provider="playwright"),
+                self.state,
+                self.worktree,
+            )
+
     def test_rejects_evidence_from_a_different_reviewer(self):
         self.state["mode"] = {"name": "codex"}
         self.state["reviewer"] = {"method": "codex-browser"}
@@ -204,6 +234,12 @@ class EvidenceVerificationTests(unittest.TestCase):
         )
 
         self.assertIn("Browser integrado de Codex", body)
+
+    def test_pr_body_names_playwright_provider(self):
+        body = _pr_body("<!-- marker -->", [], provider="playwright")
+
+        self.assertIn("Playwright (Chromium headless en Conductor Cloud)", body)
+        self.assertNotIn("Cua Driver", body)
 
     def test_pr_body_discloses_headless_upload_assistance(self):
         body = _pr_body(
