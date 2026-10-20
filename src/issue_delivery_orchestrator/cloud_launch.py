@@ -187,8 +187,10 @@ def bootstrap_message(agent: str, toolbox_profile: str) -> str:
     return (
         "Prepara este workspace de Conductor Cloud para Issue Delivery Orchestrator. En esta "
         "sesión no trabajes ninguna issue: sólo prepara el entorno y responde.\n\n"
-        "1. Si el setup del workspace sigue corriendo (`pgrep -f setup-workspace.sh`), espera a "
-        "que termine revisando cada 15 segundos, hasta 20 minutos.\n"
+        # The bracket keeps pgrep from matching the shell that runs the wait loop itself.
+        "1. Si el setup del workspace sigue corriendo (`pgrep -f '[s]etup-workspace\\.sh'`; los "
+        "corchetes evitan que pgrep encuentre al propio shell que espera), espera a que termine "
+        "revisando cada 15 segundos, hasta 10 minutos. No uses el patrón sin corchetes.\n"
         f"2. Ejecuta `{plugin_list}` y confirma que `{PLUGIN_ID}` esté habilitado con versión "
         f"{MINIMUM_PLUGIN_VERSION} o mayor. Si falta o es menor, ejecuta desde la raíz del repo "
         f"`CODEX_TOOLBOX_PROFILE={toolbox_profile} pnpm conductor:toolbox` y vuelve a "
@@ -358,21 +360,40 @@ def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any])
     return _json_output(run(arguments, input_text=launch["message"]).stdout)
 
 
+TRANSCRIPT_PAGE_SIZE = 25
+
+
 def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
+    # The Conductor CLI truncates large JSON outputs, so pages stay small and shrink
+    # until they parse; a truncated page must never read as an empty transcript.
     items: list[Any] = []
     offset = 0
     while True:
-        page = _json_output(
-            run(
-                [cli, "session", "message", session_id, "--limit", "200",
-                 "--offset", str(offset), "--json"],
-            ).stdout
-        )
+        page = _transcript_page(cli, session_id, offset)
         batch = page.get("data") or []
         items += batch
         if not page.get("hasMore") or not batch:
             return {"data": items}
         offset += len(batch)
+
+
+def _transcript_page(cli: str, session_id: str, offset: int) -> dict[str, Any]:
+    limit = TRANSCRIPT_PAGE_SIZE
+    while True:
+        stdout = run(
+            [cli, "session", "message", session_id, "--limit", str(limit),
+             "--offset", str(offset), "--json"],
+        ).stdout
+        try:
+            page = json.loads(stdout)
+        except json.JSONDecodeError:
+            if limit == 1:
+                raise OrchestrationError(
+                    f"Conductor returned an unreadable transcript page at offset {offset}"
+                )
+            limit = max(1, limit // 2)
+            continue
+        return page if isinstance(page, dict) else {"data": page}
 
 
 def _assistant_texts(payload: Any) -> list[str]:

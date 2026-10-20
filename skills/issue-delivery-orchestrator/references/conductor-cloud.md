@@ -31,6 +31,15 @@ No imprimir valores de secretos; comprobar sólo su presencia.
    falta, instalarlo con `corepack pnpm exec playwright install chromium` y repetir. En esta VM
    desechable el reviewer sí puede instalar Chromium.
 
+## Esperas sobre procesos
+
+Un loop que espera a otro proceso no debe poder encontrarse a sí mismo. `pgrep -f <texto>` busca
+en la línea de comandos de todos los procesos, incluido el shell que ejecuta el loop, así que
+`pgrep -f setup-workspace.sh` dentro de `for ...; do pgrep -f setup-workspace.sh ...` nunca deja de
+encontrar algo y la espera dura hasta su límite. Usar siempre un patrón con corchetes,
+`pgrep -f '[s]etup-workspace\.sh'`, o comprobar el resultado esperado (por ejemplo el plugin
+instalado) en vez del proceso. Limitar toda espera con un máximo explícito.
+
 ## Iniciar el run
 
 ```bash

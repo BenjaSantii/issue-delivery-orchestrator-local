@@ -49,7 +49,14 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 5. Entregar `workspaceId` y la sesión de entrega. Ante `FAILED`, mostrar la causa; ante timeout,
    el comando imprime cómo reanudar: `cloud-launch --confirm --workspace <id>`, que retoma la
    espera y nunca crea una segunda sesión Entrega.
-6. Para seguir un workspace: `conductor workspace status <id>` y
+6. Si la sesión de preparación se queda esperando sin avanzar, revisar el comando que está
+   corriendo. Un `pgrep -f <texto>` sin corchetes dentro de un loop se encuentra a sí mismo y nunca
+   termina (ver "Esperas sobre procesos" en
+   [conductor-cloud.md](../issue-delivery-orchestrator/references/conductor-cloud.md)). Cancelar
+   ese turno con `conductor session cancel <sesión>` y enviar a la misma sesión la instrucción
+   corregida con `conductor message create --session <sesión> --message-file -`. El lanzador sigue
+   leyendo esa sesión y crea la Entrega cuando llegue `IDO-BOOTSTRAP READY`.
+7. Para seguir un workspace: `conductor workspace status <id>` y
    `conductor workspace session <id>`; no enviar mensajes a sus sesiones sin que el usuario lo pida.
 
 ## Qué recibe el workspace
