@@ -18,7 +18,7 @@ CONDUCTOR_APP_CLI = Path("/Applications/Conductor.app/Contents/Resources/bin/con
 CLOSED_STATES = {"completed", "canceled"}
 AGENTS = ("claude", "codex")
 PLUGIN_ID = "issue-delivery-orchestrator-local"
-MINIMUM_PLUGIN_VERSION = "0.12.0"
+MINIMUM_PLUGIN_VERSION = "0.12.1"
 BOOTSTRAP_MARKER = re.compile(r"(?m)^\s*`?IDO-BOOTSTRAP (READY|FAILED)(?::\s*(.*?))?`?\s*$")
 
 READINESS_QUERY = """

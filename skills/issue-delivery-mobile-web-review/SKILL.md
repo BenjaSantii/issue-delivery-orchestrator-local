@@ -25,6 +25,12 @@ teléfono con eventos táctiles reales y devolver evidencia reproducible.
   según [native-adb-evidence.md](../issue-delivery-orchestrator/references/native-adb-evidence.md).
   La falta de un dispositivo no bloquea una historia acordada como simulación web.
 
+En Conductor leer [conductor-validation.md](../issue-delivery-orchestrator/references/conductor-validation.md).
+Probar contratos nativos con Jest o scripts contra código real, mockeando sólo el adaptador
+del SO. Se admite PASS con esa evidencia y la simulación web aplicable, sin pedir WAIVED por
+falta de dispositivo. Abrir las vistas web en `http://localhost:3001` a `:3004`, con el servidor
+escuchando realmente en ese puerto; conservar los puertos internos de APIs.
+
 ## Preflight
 
 1. Exigir runtime ID, URL web de la app, historias, resultados esperados, worktree, run ID y SHA.

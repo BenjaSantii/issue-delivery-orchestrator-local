@@ -11,6 +11,9 @@ spec aprobado y producir el mismo contrato de evidencia que Cua Revision, declar
 En Conductor, incluso las historias móviles se validan SIEMPRE en navegador con la skill
 `issue-delivery-mobile-web-review`. No solicitar dispositivo/ADB ni devolver NATIVE-ONLY por
 limitaciones de simulación; documentarlas sin afirmar que se observó el SO nativo.
+Aplicar [conductor-validation.md](../issue-delivery-orchestrator/references/conductor-validation.md):
+UI en localhost:3001–3004 y contratos nativos mediante Jest/scripts; adjuntar sus assertions al
+caso correspondiente. No confundir un PASS de la lógica con observación del SO real.
 
 ## Preflight
 

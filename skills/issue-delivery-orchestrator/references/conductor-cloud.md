@@ -65,6 +65,10 @@ reconciliación cambia el alcance, pedir aprobación explícita en el chat antes
 
 ## Revisión manual
 
+Aplicar [conductor-validation.md](conductor-validation.md): navegador en
+`http://localhost:3001` a `http://localhost:3004`; comportamientos nativos con Jest o scripts
+contra código real, con evidencia de assertions y sin exigir dispositivo para cerrar el caso.
+
 Para runs nuevos con observabilityVersion 1, abrir una sesión QA distinta con `qa-session`
 según [fresh-qa.md](fresh-qa.md). Reutilizar el runtime de la VM, sin heredar el historial de
 Generador ni ejecutar un CLI de modelo anidado. El controlador publica métricas de tickets/fases
