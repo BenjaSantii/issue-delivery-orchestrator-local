@@ -1,6 +1,6 @@
 {
   "name": "issue-delivery-orchestrator-local",
-  "version": "0.11.1+codex.20261020193358",
+  "version": "0.11.2+codex.20261020194500",
   "description": "Deliver Linear issues from an approved spec through implementation, UI verification, pull request creation, and automated review convergence.",
   "author": {
     "name": "benjaminlillo",
