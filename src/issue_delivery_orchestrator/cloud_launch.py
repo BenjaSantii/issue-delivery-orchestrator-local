@@ -1,0 +1,293 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+from pathlib import Path
+from typing import Any
+
+from .config import Settings
+from .errors import OrchestrationError, RunBlocked
+from .linear import LinearClient, extract_marker_block, normalize_issue_identifier
+from .util import run
+
+
+CONDUCTOR_APP_CLI = Path("/Applications/Conductor.app/Contents/Resources/bin/conductor")
+CLOSED_STATES = {"completed", "canceled"}
+AGENTS = ("claude", "codex")
+
+READINESS_QUERY = """
+query CloudLaunchReadiness($id: String!) {
+  issue(id: $id) {
+    id
+    identifier
+    title
+    url
+    branchName
+    description
+    state { name type }
+    parent { identifier branchName state { type } }
+    inverseRelations(first: 50) {
+      nodes {
+        type
+        issue { identifier title branchName state { name type } }
+      }
+    }
+  }
+}
+"""
+
+
+def delivery_readiness(
+    client: LinearClient,
+    identifier_or_url: str,
+    marker_prefix: str,
+) -> dict[str, Any]:
+    identifier = normalize_issue_identifier(identifier_or_url)
+    issue = client._graphql(READINESS_QUERY, {"id": identifier}).get("issue")
+    if not issue:
+        raise OrchestrationError(f"Linear issue not found: {identifier_or_url}")
+    description = issue.get("description") or ""
+    problems: list[str] = []
+
+    state = issue.get("state") or {}
+    if state.get("type") in CLOSED_STATES:
+        problems.append(f"{identifier} is {state.get('name')}; there is nothing to deliver")
+    if not (issue.get("branchName") or "").strip():
+        problems.append(f"{identifier} has no Linear git branch name")
+
+    spec = _block(description, marker_prefix, "spec")
+    tickets = _block(description, marker_prefix, "tickets")
+    if not spec or not re.search(r"(?m)^Spec ID:\s*\S", spec):
+        problems.append("No approved spec block (Spec ID) in the Linear description")
+    if not tickets or not re.search(r"(?m)^Ticket ID:\s*\S", tickets):
+        problems.append("No approved tickets block (Ticket ID) in the Linear description")
+
+    blockers = [
+        node["issue"]
+        for node in (issue.get("inverseRelations") or {}).get("nodes", [])
+        if node.get("type") == "blocks"
+        and (node.get("issue") or {}).get("state", {}).get("type") not in CLOSED_STATES
+    ]
+    return {
+        "identifier": issue["identifier"],
+        "title": issue["title"],
+        "url": issue.get("url") or "",
+        "branch": (issue.get("branchName") or "").strip(),
+        "state": state.get("name"),
+        "specId": _first_value(spec, "Spec ID"),
+        "ticketIds": re.findall(r"(?m)^Ticket ID:\s*(\S+)", tickets or ""),
+        "parent": issue.get("parent"),
+        "openBlockers": [
+            {
+                "identifier": blocker["identifier"],
+                "title": blocker["title"],
+                "branch": blocker.get("branchName") or "",
+                "state": (blocker.get("state") or {}).get("name"),
+            }
+            for blocker in blockers
+        ],
+        "problems": problems,
+    }
+
+
+def stack_parent_for(readiness: dict[str, Any], explicit: str | None) -> str | None:
+    """Return the branch a blocked slice must stack on, or raise when it cannot start."""
+    if explicit:
+        return explicit
+    blockers = readiness["openBlockers"]
+    if not blockers:
+        return None
+    parent = readiness.get("parent") or {}
+    if len(blockers) == 1 and blockers[0]["identifier"] == parent.get("identifier"):
+        return blockers[0]["branch"]
+    names = ", ".join(f"{item['identifier']} ({item['state']})" for item in blockers)
+    raise RunBlocked(
+        f"{readiness['identifier']} is blocked by {names}. Deliver the blockers first or "
+        "pass --stack-parent with the branch to stack on."
+    )
+
+
+def build_launch(
+    readiness: dict[str, Any],
+    configuration: Settings,
+    repository: Path,
+    *,
+    base: str,
+    stack_parent: str | None,
+    agent: str,
+    model: str | None,
+    toolbox_profile: str,
+    project_id: str,
+) -> dict[str, Any]:
+    if agent not in AGENTS:
+        raise OrchestrationError(f"Unsupported Conductor agent {agent}; use {', '.join(AGENTS)}")
+    if not configuration.linear_expected_email or not configuration.github_expected_login:
+        raise RunBlocked(
+            "LINEAR_EXPECTED_EMAIL and GITHUB_EXPECTED_LOGIN must be configured; the cloud "
+            "toolbox install fails without them"
+        )
+    workspace_base = stack_parent or base
+    if not _remote_branch_exists(repository, workspace_base):
+        raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
+
+    message = launch_message(
+        readiness,
+        base=base,
+        stack_parent=stack_parent,
+        toolbox_profile=toolbox_profile,
+    )
+    name = f"[{readiness['identifier']}] {readiness['title']}"
+    arguments = [
+        "workspace",
+        "create",
+        "--project-id",
+        project_id,
+        "--branch",
+        workspace_base,
+        "--name",
+        name[:80],
+        "--agent",
+        agent,
+    ]
+    if model:
+        arguments += ["--model", model]
+    # Only non-secret identity values travel here; LINEAR_API_KEY comes from the
+    # Conductor project environment.
+    arguments += [
+        "--env",
+        f"CODEX_TOOLBOX_PROFILE={toolbox_profile}",
+        "--env",
+        f"LINEAR_EXPECTED_EMAIL={configuration.linear_expected_email}",
+        "--env",
+        f"GITHUB_EXPECTED_LOGIN={configuration.github_expected_login}",
+        "--message-file",
+        "-",
+        "--json",
+    ]
+    return {
+        "arguments": arguments,
+        "message": message,
+        "workspaceBase": workspace_base,
+        "behindTarget": _commits_behind(
+            repository,
+            workspace_base,
+            configuration.pr_target_branch,
+        ),
+    }
+
+
+def launch_message(
+    readiness: dict[str, Any],
+    *,
+    base: str,
+    stack_parent: str | None,
+    toolbox_profile: str,
+) -> str:
+    identifier = readiness["identifier"]
+    command = f"`--mode conductor --base {base}`"
+    if stack_parent:
+        command = f"`--mode conductor --stack-parent {stack_parent}`"
+    tickets = ", ".join(readiness["ticketIds"])
+    return (
+        f"Entrega {identifier} ({readiness['title']}) con Issue Delivery Orchestrator en "
+        "Conductor Cloud.\n\n"
+        "1. Comprueba que el plugin `issue-delivery-orchestrator-local` esté instalado y "
+        "habilitado (`claude plugin list` o `codex plugin list`). Si no lo está, ejecuta desde "
+        f"la raíz del repo `CODEX_TOOLBOX_PROFILE={toolbox_profile} pnpm conductor:toolbox`. Si "
+        "se instaló durante esta sesión, sus skills no están cargadas: lee los `SKILL.md` "
+        "directamente desde el directorio instalado y úsalo como `<plugin-root>`. Después "
+        "prepara el workspace siguiendo "
+        "`<plugin-root>/skills/issue-delivery-orchestrator/references/conductor-cloud.md`.\n"
+        "2. Inicia el orquestador (Claude Code: "
+        "`/issue-delivery-orchestrator-local:issue-delivery-orchestrator`; Codex: "
+        f"`$issue-delivery-orchestrator`) para {identifier} con `--worktree` igual a la raíz de "
+        f"este checkout y {command}.\n"
+        f"3. El usuario ya aprobó el spec {readiness['specId']} y los tickets {tickets}, "
+        "publicados en Linear. Reconcilia esos bloques con el repositorio; si no hay "
+        "diferencias, registra la aprobación vigente y continúa a Implement sin repetir el "
+        "Grill. Si la reconciliación cambia el alcance, pide aprobación antes de seguir.\n"
+        "4. Verifica las historias UI con `issue-delivery-playwright-review` y las de teléfono "
+        "con el agente `mobile-web-reviewer`.\n"
+        "5. Pausa sólo ante tickets HITL, decisiones de tamaño, permisos explícitos como "
+        "LocalReviewer o un bloqueo; explica la acción mínima que necesitas.\n"
+    )
+
+
+def conductor_cli() -> str:
+    for candidate in (
+        os.environ.get("CONDUCTOR_CLI", "").strip(),
+        shutil.which("conductor") or "",
+        str(CONDUCTOR_APP_CLI),
+    ):
+        if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise RunBlocked(
+        "Conductor CLI not found. Install the Conductor app or set CONDUCTOR_CLI."
+    )
+
+
+def conductor_project_id(cli: str, repository: Path) -> str:
+    remote = run(["git", "remote", "get-url", "origin"], cwd=repository).stdout.strip()
+    wanted = _normalize_remote(remote)
+    listing = json.loads(run([cli, "project", "list", "--json", "--limit", "200"]).stdout)
+    projects = listing.get("data", listing) if isinstance(listing, dict) else listing
+    matches = [
+        project
+        for project in projects
+        if _normalize_remote(str(project.get("gitRemote") or project.get("repoUrl") or ""))
+        == wanted
+    ]
+    if len(matches) != 1:
+        raise RunBlocked(
+            f"Expected exactly one Conductor project for {remote}, found {len(matches)}. "
+            "Pass --conductor-project."
+        )
+    return str(matches[0]["id"])
+
+
+def create_workspace(cli: str, launch: dict[str, Any]) -> dict[str, Any]:
+    result = run([cli, *launch["arguments"]], input_text=launch["message"])
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"output": result.stdout.strip()}
+
+
+def _block(description: str, marker_prefix: str, block: str) -> str | None:
+    try:
+        return extract_marker_block(description, marker_prefix=marker_prefix, block=block)
+    except OrchestrationError:
+        return None
+
+
+def _first_value(block: str | None, key: str) -> str | None:
+    match = re.search(rf"(?m)^{re.escape(key)}:\s*(\S+)", block or "")
+    return match.group(1) if match else None
+
+
+def _remote_branch_exists(repository: Path, branch: str) -> bool:
+    result = run(
+        ["git", "ls-remote", "--exit-code", "--heads", "origin", branch],
+        cwd=repository,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _commits_behind(repository: Path, branch: str, target: str) -> int | None:
+    run(["git", "fetch", "--quiet", "origin", branch, target], cwd=repository, check=False)
+    result = run(
+        ["git", "rev-list", "--count", f"origin/{branch}..origin/{target}"],
+        cwd=repository,
+        check=False,
+    )
+    return int(result.stdout.strip()) if result.returncode == 0 else None
+
+
+def _normalize_remote(remote: str) -> str:
+    value = remote.strip().lower()
+    value = re.sub(r"^git@([^:]+):", r"https://\1/", value)
+    value = re.sub(r"^ssh://git@", "https://", value)
+    return value.removesuffix(".git").rstrip("/")

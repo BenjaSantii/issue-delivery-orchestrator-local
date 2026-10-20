@@ -10,6 +10,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .cloud_launch import (
+    build_launch,
+    conductor_cli,
+    conductor_project_id,
+    create_workspace,
+    delivery_readiness,
+    stack_parent_for,
+)
 from .config import DEFAULT_CONFIG_HOME, Settings, settings
 from .credentials import CredentialProvider
 from .errors import IdentityMismatch, OrchestrationError, RunBlocked
@@ -113,6 +121,23 @@ def parser() -> argparse.ArgumentParser:
         help="Read the live Linear issue and all comments with the personal API key",
     )
     actions.add_parser("status")
+    cloud = actions.add_parser(
+        "cloud-launch",
+        help="Check that the issue has approved spec/tickets and start it in Conductor Cloud",
+    )
+    cloud.add_argument(
+        "--toolbox-profile",
+        default=os.environ.get("ISSUE_DELIVERY_TOOLBOX_PROFILE", ""),
+        help="software-skills profile the cloud workspace installs",
+    )
+    cloud.add_argument("--agent", default="claude", choices=("claude", "codex"))
+    cloud.add_argument("--model", help="Model for the first Conductor session")
+    cloud.add_argument("--conductor-project", help="Conductor project ID")
+    cloud.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Create the workspace; without it the command only prints the plan",
+    )
 
     reviewer = actions.add_parser(
         "reviewer-select",
@@ -240,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.action == "read-linear-issue":
         return read_linear_issue(args.issue)
+    if args.action == "cloud-launch":
+        return cloud_launch(args)
 
     configuration = settings()
     repository = _repository(args.worktree, configuration.repository)
@@ -314,6 +341,11 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
         return _public_state(state)
     if args.action == "launch-browser":
+        if review_method(state) == "playwright":
+            raise RunBlocked(
+                "Dedicated Chrome is disabled in conductor mode; "
+                "verify the UI with issue-delivery-playwright-review"
+            )
         if review_method(state) != "cua-driver":
             raise RunBlocked(
                 "Dedicated Chrome is disabled in codex mode; "
@@ -412,6 +444,52 @@ def read_linear_issue(identifier_or_url: str) -> dict[str, Any]:
     }
 
 
+def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
+    if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
+        raise RunBlocked("cloud-launch runs from your machine, not inside a cloud workspace")
+    if not args.toolbox_profile:
+        raise RunBlocked(
+            "Set ISSUE_DELIVERY_TOOLBOX_PROFILE or pass --toolbox-profile so the cloud "
+            "workspace installs this plugin"
+        )
+    configuration = settings()
+    # The launcher targets the configured product repository, not whichever workspace
+    # (for example a Superset session) the command happens to run from.
+    repository = _repository(configuration.repository, None)
+    linear, credential_source = _verified_linear()
+    readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
+    if readiness["problems"]:
+        raise RunBlocked("; ".join(readiness["problems"]))
+    stack_parent = stack_parent_for(readiness, args.stack_parent)
+    cli = conductor_cli()
+    project_id = args.conductor_project or conductor_project_id(cli, repository)
+    launch = build_launch(
+        readiness,
+        configuration,
+        repository,
+        base=args.base,
+        stack_parent=stack_parent,
+        agent=args.agent,
+        model=args.model,
+        toolbox_profile=args.toolbox_profile,
+        project_id=project_id,
+    )
+    plan = {
+        "credentialSource": credential_source,
+        "readiness": readiness,
+        "stackParent": stack_parent,
+        "conductor": cli,
+        "command": [cli, *launch["arguments"]],
+        "message": launch["message"],
+        "workspaceBase": launch["workspaceBase"],
+        "workspaceBaseBehindPrTarget": launch["behindTarget"],
+        "created": False,
+    }
+    if not args.confirm:
+        return plan
+    return {**plan, "created": True, "workspace": create_workspace(cli, launch)}
+
+
 def bootstrap(
     args: argparse.Namespace,
     repository: Path,
@@ -459,7 +537,8 @@ def bootstrap(
     if args.reviewer:
         raise RunBlocked(
             "New runs select their UI reviewer through --mode; "
-            "codex uses codex-browser; superset and vanilla use cua-driver"
+            "codex uses codex-browser; superset and vanilla use cua-driver; "
+            "conductor uses playwright"
         )
     if not requested_worktree:
         mode_hint = (
@@ -483,6 +562,13 @@ def bootstrap(
     workspace.fetch(args.base)
     if mode == "codex":
         worktree = workspace.adopt_codex(
+            requested_worktree,
+            issue.branch_name,
+            args.base,
+            issue.identifier,
+        )
+    elif mode == "conductor":
+        worktree = workspace.adopt_conductor(
             requested_worktree,
             issue.branch_name,
             args.base,
@@ -777,7 +863,7 @@ def _select_state(
 def _requested_worktree(explicit: Path | None, mode: str | None) -> Path | None:
     if explicit:
         return explicit
-    if mode in {"codex", "vanilla"}:
+    if mode in {"codex", "vanilla", "conductor"}:
         return None
     raw = os.environ.get("SUPERSET_WORKSPACE_PATH")
     return Path(raw) if raw else None
@@ -790,6 +876,9 @@ def _new_run_mode(
 ) -> tuple[str, str]:
     if explicit:
         return explicit, "explicit"
+
+    if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
+        return "conductor", "conductor-cloud-environment"
 
     candidate = worktree.expanduser().resolve()
     superset_workspace = os.environ.get("SUPERSET_WORKSPACE_PATH", "").strip()
@@ -878,7 +967,7 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
         "workspaceMode": (
             "adopted"
             if str(state.get("createdFrom", "")).startswith(
-                ("adopted:", "codex:", "vanilla:")
+                ("adopted:", "codex:", "vanilla:", "conductor:")
             )
             else "private"
         ),
@@ -931,6 +1020,14 @@ def _next_action(state: dict[str, Any]) -> str:
         return (
             "Launch the run-owned dedicated browser and verify the UI with "
             "Cua Driver from this checkout."
+        )
+    if (
+        state.get("currentPhase") == "manual-revision"
+        and run_mode(state) == "conductor"
+    ):
+        return (
+            "Verify the UI with issue-delivery-playwright-review from this "
+            "Conductor Cloud checkout; use mobile-web-reviewer for phone stories."
         )
     return f"Execute phase {state.get('currentPhase')} from the worktree."
 

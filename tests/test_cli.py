@@ -117,6 +117,14 @@ class CliModeTests(unittest.TestCase):
         self.assertEqual(args.mode, "vanilla")
         self.assertEqual(args.worktree, Path("/tmp/checkout"))
 
+    def test_parses_explicit_conductor_mode_and_worktree(self):
+        args = parser().parse_args(
+            ["TS-1", "--mode", "conductor", "--worktree", "/tmp/conductor"]
+        )
+
+        self.assertEqual(args.mode, "conductor")
+        self.assertEqual(args.worktree, Path("/tmp/conductor"))
+
     def test_parses_prepare_evidence_manifest(self):
         args = parser().parse_args(
             ["TS-1", "prepare-evidence", "--manifest", "validation/ui.json"]
@@ -262,6 +270,58 @@ class CliModeTests(unittest.TestCase):
         with patch.dict(os.environ, {"SUPERSET_WORKSPACE_PATH": "/tmp/superset"}):
             self.assertIsNone(_requested_worktree(None, "vanilla"))
 
+    def test_conductor_mode_does_not_adopt_superset_environment(self):
+        with patch.dict(os.environ, {"SUPERSET_WORKSPACE_PATH": "/tmp/superset"}):
+            self.assertIsNone(_requested_worktree(None, "conductor"))
+
+    def test_detects_conductor_from_cloud_environment(self):
+        configuration = self._settings()
+        with patch.dict(os.environ, {"CONDUCTOR_IS_LOCAL": "0"}):
+            self.assertEqual(
+                _new_run_mode(
+                    None,
+                    Path("/home/vercel-sandbox/turboshop"),
+                    configuration,
+                ),
+                ("conductor", "conductor-cloud-environment"),
+            )
+
+    def test_conductor_cloud_environment_wins_over_path_markers(self):
+        configuration = self._settings()
+        with patch.dict(os.environ, {"CONDUCTOR_IS_LOCAL": "0"}):
+            self.assertEqual(
+                _new_run_mode(
+                    None,
+                    Path("/tmp/.codex/worktrees/TS-1"),
+                    configuration,
+                ),
+                ("conductor", "conductor-cloud-environment"),
+            )
+
+    def test_local_conductor_workspace_keeps_regular_detection(self):
+        configuration = self._settings()
+        with patch.dict(os.environ, {"CONDUCTOR_IS_LOCAL": "1"}):
+            self.assertEqual(
+                _new_run_mode(
+                    None,
+                    Path("/tmp/conductor/workspaces/TS-1"),
+                    configuration,
+                ),
+                ("vanilla", "vanilla-fallback"),
+            )
+
+    def test_explicit_mode_has_priority_over_conductor_cloud(self):
+        configuration = self._settings()
+        with patch.dict(os.environ, {"CONDUCTOR_IS_LOCAL": "0"}):
+            self.assertEqual(
+                _new_run_mode(
+                    "vanilla",
+                    Path("/home/vercel-sandbox/turboshop"),
+                    configuration,
+                ),
+                ("vanilla", "explicit"),
+            )
+
     def test_detects_codex_from_path_marker(self):
         configuration = self._settings()
 
@@ -358,6 +418,19 @@ class CliModeTests(unittest.TestCase):
                 "worktree": str(Path("/tmp/worktree").resolve()),
             },
         )
+
+    def test_conductor_mode_decision_announces_playwright_reviewer(self):
+        decision = _mode_decision(
+            {
+                "worktree": "/tmp/worktree",
+                "mode": {"name": "conductor"},
+                "reviewer": {"method": "playwright"},
+            },
+            "conductor-cloud-environment",
+        )
+
+        self.assertEqual(decision["mode"], "conductor")
+        self.assertEqual(decision["reviewer"], "playwright")
 
     def test_ambiguous_path_requires_explicit_mode(self):
         configuration = self._settings()

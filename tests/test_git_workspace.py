@@ -181,6 +181,68 @@ class GitWorkspaceTests(unittest.TestCase):
                 "benjamin/ts-17-vanilla-mode",
             )
 
+    def _conductor_checkout(self, root: Path) -> Path:
+        remote = root / "remote.git"
+        seed = root / "seed"
+        checkout = root / "checkout"
+        git(root, "init", "--bare", str(remote))
+        git(root, "init", "-b", "test", str(seed))
+        git(seed, "config", "user.email", "test@example.com")
+        git(seed, "config", "user.name", "Test")
+        (seed / ".gitignore").write_text(".env\n.local-runtime/\n")
+        (seed / "file.txt").write_text("base\n")
+        git(seed, "add", ".gitignore", "file.txt")
+        git(seed, "commit", "-m", "base")
+        git(seed, "remote", "add", "origin", str(remote))
+        git(seed, "push", "-u", "origin", "test")
+        git(root, "clone", str(remote), str(checkout))
+        git(checkout, "config", "user.email", "test@example.com")
+        git(checkout, "config", "user.name", "Test")
+        # Conductor Cloud names its own scratch branch from the selected base.
+        git(checkout, "switch", "-c", "benjasantii/quiet-harbor", "origin/test")
+        return checkout
+
+    def test_conductor_switches_scratch_branch_to_linear_branch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = self._conductor_checkout(Path(raw))
+            (checkout / "file.txt").write_text("setup noise\n")
+            (checkout / ".env").write_text("preserve\n")
+
+            workspace = GitWorkspace(checkout)
+            workspace.fetch("test")
+            result = workspace.adopt_conductor(
+                checkout,
+                "benjamin/ts-21-conductor-mode",
+                "test",
+                "TS-21",
+            )
+
+            self.assertEqual(result.branch, "benjamin/ts-21-conductor-mode")
+            self.assertEqual(result.created_from, "conductor:origin/test")
+            self.assertEqual(result.discarded_status, (" M file.txt",))
+            self.assertEqual((checkout / ".env").read_text(), "preserve\n")
+            self.assertEqual(
+                git(checkout, "branch", "--show-current"),
+                "benjamin/ts-21-conductor-mode",
+            )
+
+    def test_conductor_rejects_scratch_branch_with_unpreserved_commits(self):
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = self._conductor_checkout(Path(raw))
+            (checkout / "scratch.txt").write_text("unpreserved\n")
+            git(checkout, "add", "scratch.txt")
+            git(checkout, "commit", "-m", "scratch work")
+
+            workspace = GitWorkspace(checkout)
+            workspace.fetch("test")
+            with self.assertRaisesRegex(RunBlocked, "commits not contained"):
+                workspace.adopt_conductor(
+                    checkout,
+                    "benjamin/ts-22-conductor-mode",
+                    "test",
+                    "TS-22",
+                )
+
     def test_inferred_vanilla_rejects_dirty_state_without_discarding(self):
         workspace = GitWorkspace(Path("/tmp/repository"))
         dirty = (" M tracked.txt", "?? scratch.txt")

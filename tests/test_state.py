@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from issue_delivery_orchestrator.errors import RunBlocked
+from issue_delivery_orchestrator.errors import OrchestrationError, RunBlocked
 from issue_delivery_orchestrator.state import (
     PHASES,
     complete_phase,
@@ -153,6 +153,39 @@ class StateTests(unittest.TestCase):
 
         self.assertEqual(run_mode(state), "vanilla")
         self.assertEqual(review_method(state), "cua-driver")
+
+    def test_conductor_mode_selects_playwright_reviewer(self):
+        state = create_state(
+            worktree=self.worktree,
+            run_id="run-conductor",
+            issue={"id": "id", "identifier": "TS-1", "title": "Title"},
+            branch="benjamin/ts-1",
+            base="test",
+            created_from="conductor:origin/test",
+            adopted_head="abc",
+            identities={"linear": "user@example.com", "github": "example-user"},
+            mode="conductor",
+        )
+
+        self.assertEqual(run_mode(state), "conductor")
+        self.assertEqual(review_method(state), "playwright")
+
+    def test_conductor_mode_rejects_a_different_stored_reviewer(self):
+        state = create_state(
+            worktree=self.worktree,
+            run_id="run-conductor-mismatch",
+            issue={"id": "id", "identifier": "TS-1", "title": "Title"},
+            branch="benjamin/ts-1",
+            base="test",
+            created_from="conductor:origin/test",
+            adopted_head="abc",
+            identities={"linear": "user@example.com", "github": "example-user"},
+            mode="conductor",
+        )
+        state["reviewer"]["method"] = "cua-driver"
+
+        with self.assertRaisesRegex(OrchestrationError, "requires reviewer playwright"):
+            review_method(state)
 
     def test_new_mode_cannot_change_reviewer_independently(self):
         with self.assertRaisesRegex(RunBlocked, "fixed by development mode"):
