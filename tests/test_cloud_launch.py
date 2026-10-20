@@ -251,6 +251,12 @@ class MessageTests(unittest.TestCase):
         self.assertIn("IDO-BOOTSTRAP READY", message)
         self.assertIn("no trabajes ninguna issue", message)
 
+    def test_bootstrap_setup_wait_cannot_match_its_own_shell(self):
+        message = bootstrap_message("claude", "benjasanti")
+
+        self.assertIn("pgrep -f '[s]etup-workspace\\.sh'", message)
+        self.assertNotIn("pgrep -f setup-workspace.sh", message)
+
 
 def agent_event(*blocks, kind="assistant"):
     payload = {"type": kind, "message": {"role": "assistant", "content": list(blocks)}}

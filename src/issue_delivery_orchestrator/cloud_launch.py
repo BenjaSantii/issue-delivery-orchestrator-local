@@ -187,8 +187,10 @@ def bootstrap_message(agent: str, toolbox_profile: str) -> str:
     return (
         "Prepara este workspace de Conductor Cloud para Issue Delivery Orchestrator. En esta "
         "sesión no trabajes ninguna issue: sólo prepara el entorno y responde.\n\n"
-        "1. Si el setup del workspace sigue corriendo (`pgrep -f setup-workspace.sh`), espera a "
-        "que termine revisando cada 15 segundos, hasta 20 minutos.\n"
+        # The bracket keeps pgrep from matching the shell that runs the wait loop itself.
+        "1. Si el setup del workspace sigue corriendo (`pgrep -f '[s]etup-workspace\\.sh'`; los "
+        "corchetes evitan que pgrep encuentre al propio shell que espera), espera a que termine "
+        "revisando cada 15 segundos, hasta 10 minutos. No uses el patrón sin corchetes.\n"
         f"2. Ejecuta `{plugin_list}` y confirma que `{PLUGIN_ID}` esté habilitado con versión "
         f"{MINIMUM_PLUGIN_VERSION} o mayor. Si falta o es menor, ejecuta desde la raíz del repo "
         f"`CODEX_TOOLBOX_PROFILE={toolbox_profile} pnpm conductor:toolbox` y vuelve a "
