@@ -81,6 +81,10 @@ not because implementation is difficult.
    Assign every `QA Script` case to exactly one ticket under `QA Cases Covered`: the ticket whose
    change makes it pass. The ticket covering a `concurrency` case also implements the race test
    named in its `Regression test` and lists it under `Coverage Delta` and `Validation`.
+   Apply [retained-tests.md](../test/references/retained-tests.md): `Coverage Delta` names the
+   permanent tests and their unique signal, while `QA Cases Covered` assigns execution of the
+   full QA script. Do not turn every QA case into a new committed test or duplicate an
+   invariant across hooks/services and screens without a distinct integration risk.
 4. Use unique sequential IDs, valid dependency references and at least one focused validation
    command per AFK ticket.
 5. Estimate each ticket's product lines from the files and patterns it will touch. When the sum
