@@ -439,3 +439,70 @@ class RemoteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloudResumeTests(unittest.TestCase):
+    def test_message_resumes_without_new_run_and_keeps_local_changes(self):
+        from issue_delivery_orchestrator.cloud_launch import resume_message
+
+        message = resume_message("LOG-201")
+
+        self.assertIn("no uses `--new-run`", message)
+        self.assertIn("nextAction", message)
+        self.assertIn("no los descartes", message)
+        self.assertIn("no se heredan", message)
+
+    def test_finds_the_single_active_workspace_by_issue_prefix(self):
+        from issue_delivery_orchestrator.cloud_launch import find_issue_workspace
+
+        listing = {"data": [
+            {"id": "ws-old", "name": "[LOG-201] viejo", "archivedAt": "2026-10-01"},
+            {"id": "ws-1", "name": "[LOG-201] Sales Force", "archivedAt": None},
+            {"id": "ws-2", "name": "[LOG-2010] otra", "archivedAt": None},
+        ]}
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = json.dumps(listing)
+            self.assertEqual(find_issue_workspace("conductor", "LOG-201")["id"], "ws-1")
+
+    def test_ambiguous_workspace_needs_explicit_id(self):
+        from issue_delivery_orchestrator.cloud_launch import find_issue_workspace
+
+        listing = {"data": [
+            {"id": "a", "name": "[LOG-201] uno", "archivedAt": None},
+            {"id": "b", "name": "[LOG-201] dos", "archivedAt": None},
+        ]}
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = json.dumps(listing)
+            with self.assertRaisesRegex(RunBlocked, "Pass --workspace"):
+                find_issue_workspace("conductor", "LOG-201")
+
+    def test_resume_session_uses_claude_opus_and_numbers_itself(self):
+        from issue_delivery_orchestrator.cloud_launch import create_resume_session
+
+        with patch(
+            "issue_delivery_orchestrator.cloud_launch.workspace_sessions",
+            return_value=[{"id": "s-1", "name": "Entrega"}, {"id": "s-2", "name": "Reanudación 1"}],
+        ), patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = '{"id": "s-3"}'
+            create_resume_session("conductor", "ws-1", "msg", agent="claude", model="opus-5-5-1m")
+
+        arguments = runner.call_args.args[0]
+        self.assertEqual(arguments[arguments.index("--agent") + 1], "claude")
+        self.assertEqual(arguments[arguments.index("--model") + 1], "opus-5-5-1m")
+        self.assertEqual(arguments[arguments.index("--name") + 1], "Reanudación 2")
+        self.assertEqual(runner.call_args.kwargs["input_text"], "msg")
+
+    def test_resume_blocks_while_another_session_is_working(self):
+        from argparse import Namespace
+        from issue_delivery_orchestrator.cli import cloud_resume
+
+        with patch.dict(os.environ, {"CONDUCTOR_IS_LOCAL": ""}), patch(
+            "issue_delivery_orchestrator.cli.conductor_cli", return_value="conductor"
+        ), patch(
+            "issue_delivery_orchestrator.cli.working_sessions",
+            return_value=[{"id": "s-1", "name": "Entrega"}],
+        ):
+            with self.assertRaisesRegex(RunBlocked, "still has working sessions"):
+                cloud_resume(Namespace(issue="LOG-201", workspace="ws-1", agent="claude",
+                                       model="opus-5-5-1m", confirm=True))
+
