@@ -42,7 +42,7 @@ Cuando el input sea un ajuste, corrección o reporte de algo que no funciona, cu
 1. Convertir el reporte en un escenario de aceptación reproducible y listar las historias afectadas.
 2. Implementar e invocar `test` para la validación automatizada enfocada.
 3. Entregar el SHA candidato, escenario, superficies afectadas y evidencia mínima propuesta al skill padre.
-4. Para lógica determinista consumir el recibo de `test`. Levantar Local Runtime sólo cuando la integración lo exija. Invocar `issue-delivery-cua-review` en modo `superset` o `vanilla`, o `issue-delivery-browser-review` en modo `codex`, únicamente si cambió o puede haber regresado comportamiento visual/interactivo.
+4. Para lógica determinista consumir el recibo de `test`. Levantar Local Runtime sólo cuando la integración lo exija. Invocar `issue-delivery-cua-review` en modo `superset` o `vanilla`, `issue-delivery-browser-review` en modo `codex` o `issue-delivery-playwright-review` en modo `conductor`, únicamente si cambió o puede haber regresado comportamiento visual/interactivo.
 5. Si la verificación falla, usar el finding como nueva entrada. Para blockers remotos, `pr-blocker-convergence` debe emitir `STOP` después de dos iteraciones fallidas de la misma cadena causal.
 6. Invalidar sólo el PASS o recibo de una superficie que una edición posterior pueda afectar.
 

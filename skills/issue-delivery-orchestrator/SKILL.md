@@ -1,6 +1,6 @@
 ---
 name: issue-delivery-orchestrator
-description: "Orquestar de extremo a extremo una issue de Linear en modo Codex, Superset o Vanilla: adoptar el worktree, usar la rama de Linear, publicar spec/tickets, implementar, refactorizar, verificar la superficie afectada, crear la PR y converger blockers y Actions sin integrar otras ramas. Usar también para ajustes posteriores; cada reparación exige evidencia nueva proporcional al riesgo antes del handoff."
+description: "Orquestar de extremo a extremo una issue de Linear en modo Codex, Superset, Vanilla o Conductor Cloud: adoptar el worktree, usar la rama de Linear, publicar spec/tickets, implementar, refactorizar, verificar la superficie afectada, crear la PR y converger blockers y Actions sin integrar otras ramas. Usar también para ajustes posteriores; cada reparación exige evidencia nueva proporcional al riesgo antes del handoff."
 ---
 
 # Issue Delivery Orchestrator
@@ -18,8 +18,12 @@ nunca el snapshot instalado en `plugins/cache/`.
 Cuando se nombre otra skill incluida, invocarla con la sintaxis nativa del host: `$<skill>` en
 Codex o `/issue-delivery-orchestrator-local:<skill>` en Claude Code. Resolver `<plugin-root>` como
 el directorio instalado del plugin; en Claude Code corresponde a `${CLAUDE_PLUGIN_ROOT}`. Claude
-Code nunca selecciona modo `codex`: usar `superset` cuando exista su señal válida y `vanilla` en
-cualquier otro checkout preparado.
+Code nunca selecciona modo `codex`: usar `conductor` dentro de Conductor Cloud, `superset` cuando
+exista su señal válida y `vanilla` en cualquier otro checkout preparado.
+
+Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la máquina local, usar
+`issue-delivery-cloud-launch`. Dentro del workspace cloud, leer
+[conductor-cloud.md](references/conductor-cloud.md) antes de iniciar el run.
 
 ## Iniciar o reanudar
 
@@ -39,7 +43,10 @@ cualquier otro checkout preparado.
    - `vanilla`: iniciar Codex CLI o Claude Code directamente en un checkout o worktree ya preparado
      por el usuario o su herramienta habitual. Ejecutar el setup local del repositorio antes del
      loop y seleccionar siempre `--mode vanilla`. En Claude Code, elegir este modo salvo que el
-     checkout tenga una señal válida de Superset.
+     checkout tenga una señal válida de Superset o de Conductor Cloud.
+   - `conductor`: workspace de Conductor Cloud (`CONDUCTOR_IS_LOCAL=0`), normalmente creado con
+     `issue-delivery-cloud-launch`. Preparar la VM según
+     [conductor-cloud.md](references/conductor-cloud.md) y seleccionar `--mode conductor`.
 
 3. Antes de cambiar de directorio, ejecutar `git rev-parse --show-toplevel` en el workspace actual y
    conservar esa ruta absoluta. No iniciar modo `codex` desde Local, modo `superset` desde otro
@@ -47,11 +54,12 @@ cualquier otro checkout preparado.
    delegar otro worktree mediante `create_thread`, subagentes, `git worktree add` o cualquier
    mecanismo equivalente. Si el worktree actual no es adoptable, bloquear en la misma sesión y
    pedir al usuario que abra manualmente otro con su setup local.
-4. Ejecutar, agregando `--mode <codex|superset|vanilla>` sólo cuando el usuario indique uno:
+4. Ejecutar, agregando `--mode <codex|superset|vanilla|conductor>` sólo cuando el usuario indique
+   uno o el checkout sea de Conductor Cloud:
 
    ```bash
    python3 <plugin-root>/scripts/issue-delivery <issue> --worktree <ruta> \
-     [--mode <codex|superset|vanilla>] \
+     [--mode <codex|superset|vanilla|conductor>] \
      [--base <branch>] [--stack-parent <rama-del-slice-padre>] [--new-run]
    ```
 
@@ -59,7 +67,7 @@ cualquier otro checkout preparado.
    [slicing.md](references/slicing.md)): el run parte de esa rama y su PR apunta a ella.
 
 5. Confirmar `modeSource` y `developmentMode` en la respuesta. La detección usa, en orden:
-   `SUPERSET_WORKSPACE_PATH` coincidente, raíces configuradas y componentes inequívocos de la ruta
+   `CONDUCTOR_IS_LOCAL=0` (Conductor Cloud), `SUPERSET_WORKSPACE_PATH` coincidente, raíces configuradas y componentes inequívocos de la ruta
    como `.codex` o `superset-worktrees`. Si no encuentra ninguna señal, elegir `vanilla` con
    `modeSource: vanilla-fallback`; si detecta señales contradictorias, pedir el modo al usuario. El
    modo determina el workspace y reviewer durante todo el run:
@@ -71,6 +79,9 @@ cualquier otro checkout preparado.
    - `vanilla` adopta el checkout/worktree indicado, permite partir desde `origin/<base>`,
      `detached HEAD` seguro o la rama de la issue, conecta la rama de Linear y usa
      `issue-delivery-cua-review`.
+   - `conductor` adopta el checkout cloud desde la rama inicial que crea Conductor, siempre que su
+     historia esté contenida en la base o en la rama de la issue, conecta la rama de Linear y usa
+     `issue-delivery-playwright-review`.
 
 6. Publicar inmediatamente en el chat, para runs nuevos y reanudados, los valores exactos de
    `modeDecision` devueltos por el motor. Usar un mensaje autocontenido como:
@@ -156,7 +167,7 @@ Considerar ciclo de reparación toda instrucción que pida ajustar, corregir o c
 2. Identificar las historias afectadas. Si el caso no estaba en el spec, crear una historia temporal `REPAIR-<n>` dentro del estado ignorado del run con precondición, pasos y resultado esperado; no ampliar el spec remoto por un bug compatible con su intención.
 3. Invocar `issue-delivery-implement`, que debe delegar la validación automatizada enfocada a `test`, y dejar la branch en su estado final.
 4. Declarar en el ledger del blocker la superficie afectada y la evidencia mínima necesaria: `STATIC`, `TEST`, `API_COMMAND`, `LOCAL_RUNTIME` o `UI`.
-5. Levantar Local Runtime sólo cuando la integración o el estado ejecutándose sean parte del riesgo. Para `UI`, invocar el reviewer fijado por el modo: `issue-delivery-cua-review` en `superset` o `vanilla`, o `issue-delivery-browser-review` en `codex`.
+5. Levantar Local Runtime sólo cuando la integración o el estado ejecutándose sean parte del riesgo. Para `UI`, invocar el reviewer fijado por el modo: `issue-delivery-cua-review` en `superset` o `vanilla`, `issue-delivery-browser-review` en `codex` o `issue-delivery-playwright-review` en `conductor`.
 6. No invocar CUA/browser para cambios exclusivamente backend, documentación, tests, build o lógica no observable en UI. Si una reparación puede invalidar una historia UI aceptada, repetir sólo esa historia con el reviewer fijado.
 7. Si la verificación detecta un fallo, volver a `issue-delivery-implement` y repetir. Delegar la detección de ciclos y el límite de dos iteraciones fallidas a `pr-blocker-convergence`.
 8. Considerar obsoleta sólo la evidencia cuya superficie pueda verse afectada por el último cambio. Actualizar capturas publicadas cuando corresponda.
@@ -253,6 +264,14 @@ Para apps Android nativas, cuando el usuario autorice ADB, aplicar [native-adb-e
    - `codex`: no ejecutar `launch-browser`; exigir la app de Codex y Browser disponible,
      e invocar `issue-delivery-browser-review`. Permitir Playwright headless sólo para una story
      con brecha demostrada de `file-upload` o `hover`, sin cambiar reviewer ni modo.
+   - `conductor`: no ejecutar `launch-browser`; invocar `issue-delivery-playwright-review` dentro
+     de la VM y conservar `reviewerMethod=playwright`. Delegar las historias de teléfono, teclado o
+     gestos táctiles al agente `mobile-web-reviewer` (o a `issue-delivery-mobile-web-review` en
+     hosts sin agentes).
+
+   En cualquier modo, una historia de teléfono puede sumar el diagnóstico de
+   `mobile-web-reviewer`; fuera de `conductor` sus `FAIL` son findings, pero el PASS sigue saliendo
+   del reviewer del modo.
 
 4. Verificar las historias `UI` con el reviewer seleccionado y las demás mediante su superficie declarada.
 5. Ningún reviewer edita código. Entregar findings a `issue-delivery-implement`, reparar y repetir sólo las historias invalidadas con el mismo método.
@@ -268,10 +287,12 @@ Para apps Android nativas, cuando el usuario autorice ADB, aplicar [native-adb-e
 
 Al terminar la revisión final o bloquear el run, cerrar sólo el navegador propio del run en host
 o, si se usó Docker, retirar sólo su sandbox Cua, y registrar la limpieza según el contrato.
-`stop-processes` y el cleanup del Local Runtime no limpian el contenedor. Conservar el entorno
-mientras haya ciclos revisión-reparación activos.
+`stop-processes` y el cleanup del Local Runtime no limpian el contenedor. En `conductor`, cerrar
+los procesos de Chromium que lanzaron los scripts del run. Conservar el entorno mientras haya
+ciclos revisión-reparación activos.
 
-Leer [headless-assistance.md](references/headless-assistance.md). Mantener el reviewer del modo como
+Fuera de `conductor`, leer [headless-assistance.md](references/headless-assistance.md); en
+`conductor` no aplica porque Playwright ya es el reviewer. Mantener el reviewer del modo como
 primera opción para toda story. Si no puede ejecutar `file-upload` o mantener/demostrar un `hover`
 real, demostrar la brecha y activar Playwright headless sólo para esa story. Un resultado
 incorrecto de la app es `FAIL`, no una brecha de capacidad. Bloquear cuando Playwright tampoco
