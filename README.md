@@ -64,6 +64,10 @@ the correct invocation syntax.
 
 ## Blocker checks and local review permission
 
+Conductor does not require or run LocalReviewer before opening a PR. Report it as NOT_RUN;
+browser QA, CI parity and GitHub review convergence remain required. Other modes keep the
+local-review gate and permissions below.
+
 A request to check blockers reads and classifies existing feedback. It does not authorize repairs,
 tests, commits, pushes, comment resolution, or LocalReviewer. Invoking the convergence skill after
 that request preserves the inspection scope. Repairs require authorization to resolve blockers or

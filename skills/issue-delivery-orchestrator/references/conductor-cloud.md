@@ -1,5 +1,9 @@
 # Conductor Cloud
 
+LocalReviewer no es requerido en este modo. Omitir su ejecución y su recibo previo a la PR;
+no solicitar login o tokens de Claude/Codex para esa etapa. Declararlo NOT_RUN en la validación,
+sin inventar PASS. Mantener QA por web, paridad CI y convergencia de reviews de GitHub.
+
 Aplica a runs en modo `conductor`: un workspace de Conductor Cloud (`CONDUCTOR_IS_LOCAL=0`),
 normalmente creado con `issue-delivery-cloud-launch`. La VM es Linux, sin escritorio de macOS ni
 Docker, así que el reviewer fijo es `playwright` (Chromium headless dentro de la VM).

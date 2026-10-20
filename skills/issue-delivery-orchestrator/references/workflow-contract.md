@@ -8,7 +8,7 @@
 | `implement` | Spec y tickets | Commits locales o NO_OP por ticket |
 | `refactor` | Diff de implementación | Cumplimiento AGENTS y gates de arquitectura validado |
 | `manual-revision` | Runtime y stories | Evidencia por story y findings cerrados |
-| `pr-creation` | Commits, evidencias, paridad CI y review previa del HEAD (`record-pre-review`) | PR no draft hacia `<target>` con bloque de validación del HEAD (`publish-validation`) |
+| `pr-creation` | Commits, evidencias, paridad CI y, fuera de Conductor, review previa del HEAD (`record-pre-review`) | PR no draft hacia `<target>` con bloque de validación del HEAD (`publish-validation`) |
 | `review-convergence` | PR, bots y Actions | PR lista para reviewer humano, con bloque de validación del HEAD final |
 
 Completar una fase con:

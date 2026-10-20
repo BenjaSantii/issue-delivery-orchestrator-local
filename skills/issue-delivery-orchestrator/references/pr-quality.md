@@ -13,6 +13,12 @@ Consumir su recibo; reparar cada `branch-caused` con `issue-delivery-implement` 
 
 ## 2. Review previa a la PR
 
+En modo `conductor`, esta etapa no es requerida: no ejecutar ni esperar LocalReviewer, no pedir
+credenciales para CLIs anidados y no fabricar un recibo PASS. Continuar con la PR después de QA
+y paridad CI, declarando `LocalReviewer: NOT_RUN — no requerido en Conductor` en la validación.
+Se mantienen las revisiones y la convergencia de GitHub. El resto de esta sección aplica sólo
+fuera de Conductor.
+
 Antes de invocar LocalReviewer, pedir permiso explícito para esa ejecución, indicando SHA,
 alcance, provider/modo y número máximo de ejecuciones. El permiso cubre una ejecución salvo que
 el usuario autorice un ciclo con un límite explícito. La aprobación del spec, la entrega, las
@@ -99,6 +105,7 @@ SHA verificado: `<sha completo>`
 Reglas:
 
 - Copiar comandos, códigos de salida y conteos desde los recibos de `test`; no resumir de memoria.
-- Para apps móviles nativas, declarar dispositivo o emulador y build probado. Si no hubo prueba en
+- En Conductor, declarar simulación web móvil y sus límites; no exigir teléfono ni emulador nativo.
+- Fuera de Conductor, para apps móviles nativas, declarar dispositivo o emulador y build probado. Si no hubo prueba en
   dispositivo, decirlo en `No ejecutado`; no dejar que el reviewer lo infiera.
 - No incluir secretos, URLs privadas ni datos del ledger.

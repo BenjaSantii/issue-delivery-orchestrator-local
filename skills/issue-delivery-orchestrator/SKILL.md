@@ -352,7 +352,10 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
    `issue-delivery-implement` antes de seguir. Nunca pushear una branch que ya se sabe roja en
    lint, typecheck, tests o chequeos de
    contrato/migraciones.
-2. **Review previa a la PR.** Pedir permiso para una ejecución de `local-reviewer` sobre la branch,
+2. **Review previa a la PR (fuera de Conductor).** En modo `conductor`, omitir LocalReviewer y
+   continuar tras QA y paridad CI: no pedir permisos, login, tokens ni un recibo para esta etapa.
+   Declarar en la PR `LocalReviewer: NOT_RUN — no requerido en Conductor`; no fabricar PASS.
+   Fuera de Conductor, pedir permiso para una ejecución de `local-reviewer` sobre la branch,
    indicando SHA, alcance y provider/modo. Ejecutarla sólo con autorización vigente, según
    `pr-blocker-convergence` y `pr-quality.md`. Una repetición exige permiso nuevo o una ejecución
    restante dentro de un ciclo explícitamente autorizado. Procesar sus findings con
@@ -362,7 +365,8 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
    python3 <plugin-root>/scripts/issue-delivery <issue> record-pre-review --receipt <ruta>
    ```
 
-   `ensure-pr` rechaza crear una PR nueva sin un recibo `PASS` o `SKIP_ONLY` del HEAD actual.
+   Fuera de Conductor, `ensure-pr` rechaza crear una PR nueva sin un recibo `PASS` o `SKIP_ONLY`
+   del HEAD actual. Las revisiones posteriores de GitHub se mantienen en todos los modos.
 3. **PR y validación visible.** Crear el body dentro del run y ejecutar:
 
    ```bash
