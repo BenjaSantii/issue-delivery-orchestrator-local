@@ -30,6 +30,9 @@ VALID_SPEC_TAIL = (
     "| Risk owner | Existing evidence | Decision | Lowest sufficient seam | Unique signal | Superseded test |\n"
     "| --- | --- | --- | --- | --- | --- |\n"
     "| Copy | None | none | none | none | — |\n"
+    + "\n## QA Script\n\n"
+    "| QA ID | Type | Covers | Surface | Steps | Expected | Evidence | Regression test |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
+    "| QA-001 | happy-path | Copy | UI | Open the page | New copy shows | Screenshot | — |\n"
 )
 
 

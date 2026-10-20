@@ -112,6 +112,22 @@ For UI changes, identify the affected user flows and expected visible result so 
 Orchestrator can perform final computer-use validation and publish current screenshots. Do not turn
 this fixed closure phase into a separate implementation ticket.
 
+## Design the QA script
+
+Write `## QA Script` after `Testing Decisions`, following the orchestrator's
+`references/qa-script.md`. It is the script manual revision will execute against the running
+system, not a list of unit tests:
+
+- one `happy-path` case per user story, with the seeded data and the observable result;
+- `edge-case`, `authorization` and `failure` cases for the limits, roles and uncertain states the
+  spec names;
+- for `concurrency`, a case that fires the competing operations in parallel through `API` or
+  `command` and checks the final invariant, plus the committed race test that keeps protecting it
+  (`Regression test`, usually a `*.race.db.spec.ts`), which must also appear in `Testing Decisions`;
+- every `Applies: Yes` risk category named in `Covers`.
+
+Present the QA Script with the spec: its approval is part of the spec approval.
+
 ## Resolve the architecture
 
 Define a high-level implementation architecture sufficient for an autonomous implementer. Cover the relevant owner, boundary, data flow, persistence, authorization, failure behavior, rollout, and testing decisions without prescribing a file-by-file patch.
@@ -187,6 +203,12 @@ transaction, error-handling, rollout, migration, and compatibility decisions.>
 | --- | --- | --- | --- | --- | --- |
 | ... | ... | extend/replace/create/none | ... | ... | ... |
 
+## QA Script
+
+| QA ID | Type | Covers | Surface | Steps | Expected | Evidence | Regression test |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| QA-001 | happy-path | US-001 | UI/API/command | <precondición y pasos> | <resultado que decide PASS> | <captura o salida> | — |
+
 ## Out of Scope
 <Neighboring behavior or systems intentionally unaffected by this spec.>
 
@@ -194,8 +216,8 @@ transaction, error-handling, rollout, migration, and compatibility decisions.>
 <Source links, UI validation flows, screenshot expectations, rollout notes, or None.>
 ```
 
-Keep the exact `Testing Decisions`, `Risk Catalog`, `Consumer inventory` and `State model`
-table headers because the orchestrator validates them before publication. Keep
+Keep the exact `Testing Decisions`, `Risk Catalog`, `Consumer inventory`, `State model` and
+`QA Script` table headers because the orchestrator validates them before publication. Keep
 `Deferred`, `Rejected`, and `Out of Scope` semantically distinct:
 
 - `Deferred`: potentially valuable later, with a trigger.
@@ -218,6 +240,8 @@ Before presenting the spec, verify:
   `Yes` names its Testing Decisions row.
 - Consumer inventory and State model exist whenever their categories apply, and the state model
   includes the unknown-outcome state for remote writes.
+- The QA Script has a happy path per user story, covers every applicable risk, and each
+  concurrency case names its committed race test.
 - No unresolved material decision remains.
 - The spec is internally consistent with repository rules and the source task.
 

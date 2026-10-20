@@ -180,6 +180,9 @@ Prohibir el handoff hasta disponer de evidencia posterior al último cambio para
 2. Invocar `issue-delivery-grill` en esta conversación. Si ya existe spec/tickets, tratarlos como base y reconciliar los mismos bloques e IDs.
 3. Si existe Figma, inspeccionarlo mediante su MCP. Si no es accesible, bloquear antes de implementar, salvo que el usuario entregue explícitamente un PNG o PDF como fallback.
 4. Etiquetar cada user story con una superficie verificable: `UI`, `API-assembled` o `command-test`.
+   Construir en el spec la sección `## QA Script` según [qa-script.md](references/qa-script.md):
+   caminos felices, casos borde, permisos, fallos y concurrencia que la revisión manual ejecutará.
+   El usuario la aprueba junto con el spec y el motor la valida al publicarlo.
 5. Obtener aprobación explícita del spec y del desglose.
 6. Invocar, en orden, `issue-delivery-spec-publisher` y `issue-delivery-ticket-publisher`.
    Registrar la suma de `Estimated size` de los tickets con `size-estimate --lines <n>`. Si el
@@ -274,6 +277,12 @@ Para apps Android nativas, cuando el usuario autorice ADB, aplicar [native-adb-e
    del reviewer del modo.
 
 4. Verificar las historias `UI` con el reviewer seleccionado y las demás mediante su superficie declarada.
+   Si el spec aprobado tiene `## QA Script`, ejecutar **todos** sus casos según
+   [qa-script.md](references/qa-script.md): los `UI` con el reviewer del modo y los `API` o
+   `command` con scripts del run contra el Local Runtime, incluida la concurrencia real. Guardar
+   `validation/qa-results.json` y publicarlo con `publish-qa-results` (comentario en Linear con
+   capturas y salidas). Un `FAIL` o `BLOCKED` se repara antes de seguir; sólo el usuario puede
+   convertirlo en `WAIVED`.
 5. Ningún reviewer edita código. Entregar findings a `issue-delivery-implement`, reparar y repetir sólo las historias invalidadas con el mismo método.
 6. Permitir como máximo cinco ciclos revisión-reparación.
 7. Leer
@@ -302,10 +311,12 @@ Completar la fase con:
 
 ```bash
 python3 <plugin-root>/scripts/issue-delivery <issue> checkpoint \
-  --phase manual-revision --artifact ui-manifest=<ruta>
+  --phase manual-revision --artifact ui-manifest=<ruta> \
+  [--artifact qa-results=<ruta>]
 ```
 
-El checkpoint vuelve a preparar y validar las anotaciones.
+El checkpoint vuelve a preparar y validar las anotaciones. Con un QA Script aprobado exige además
+`qa-results`, todos sus casos en `PASS` o `WAIVED` y su publicación para el HEAD actual.
 
 ## 5. PR
 
@@ -337,7 +348,11 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
    python3 <plugin-root>/scripts/issue-delivery <issue> ensure-pr --body-file <ruta>
    python3 <plugin-root>/scripts/issue-delivery <issue> publish-validation --receipt <ruta>
    python3 <plugin-root>/scripts/issue-delivery <issue> publish-evidence --manifest <ruta>
+   python3 <plugin-root>/scripts/issue-delivery <issue> publish-qa-results --results <ruta>
    ```
+
+   Repetir `publish-qa-results` cuando exista QA Script para que el resultado quede también como
+   comentario en la PR.
 
    `publish-validation` reemplaza el bloque marcado de validación del body con el recibo del HEAD
    pusheado. Los checkpoints `pr-creation` y `review-convergence` bloquean si ese bloque no

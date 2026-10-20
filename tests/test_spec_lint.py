@@ -26,13 +26,21 @@ STATES = """### State model
 """
 
 
-def spec(rows: str, extra: str = "") -> str:
+QA_HEADER = (
+    "| QA ID | Type | Covers | Surface | Steps | Expected | Evidence | Regression test |\n"
+    "| --- | --- | --- | --- | --- | --- | --- | --- |\n"
+)
+QA_BASIC = "| QA-001 | happy-path | Horarios | UI | Abrir ficha | Se ve el horario | Captura | — |\n"
+
+
+def spec(rows: str, extra: str = "", qa: str = QA_BASIC) -> str:
     return (
         "## Implementation Decisions\n\nx\n\n"
         "## Risk Catalog\n\n"
         "| Risk category | Applies | Evidence | Coverage |\n"
         "| --- | --- | --- | --- |\n"
-        f"{rows}\n{extra}\n{TESTING}\n## Out of Scope\n\nNone\n"
+        f"{rows}\n{extra}\n{TESTING}\n## QA Script\n\n{QA_HEADER}{qa}\n"
+        "## Out of Scope\n\nNone\n"
     )
 
 
@@ -88,13 +96,18 @@ class SpecLintTests(unittest.TestCase):
             "| `workshops.gateway.ts` calls ERP | — |",
             "| `workshops.gateway.ts` calls ERP | Approval race |",
         )
-        self.assertEqual(lint_spec(spec(fixed, CONSUMERS + "\n" + STATES)), [])
+        covered = (
+            QA_BASIC
+            + "| QA-002 | failure | `external-failure` | API | ERP caído | 503 sin perder captura | Salida | — |\n"
+            + "| QA-003 | edge-case | `consumers-platforms` | UI | Abrir lote | slaTiming visible | Captura | — |\n"
+        )
+        self.assertEqual(lint_spec(spec(fixed, CONSUMERS + "\n" + STATES, covered)), [])
 
         no_unknown = STATES.replace(
             "| Unknown | Timeout after PUT | Resultado incierto | Retry read | Canonical read matches |\n",
             "",
         )
-        errors = lint_spec(spec(fixed, CONSUMERS + "\n" + no_unknown))
+        errors = lint_spec(spec(fixed, CONSUMERS + "\n" + no_unknown, covered))
         self.assertTrue(any("unknown/uncertain outcome state" in e for e in errors))
 
 

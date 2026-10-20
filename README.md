@@ -311,6 +311,18 @@ corepack pnpm test
 
 The project requires Python 3.9+ and has no runtime Python package dependencies.
 
+## QA Script
+
+New specs carry a `## QA Script`: the approved cases manual revision executes against the running
+system (happy paths per user story, edge cases, authorization, failures and real concurrency).
+The engine rejects a spec whose script misses a user story's happy path, an applicable risk, or
+the committed race test of a concurrency case. Manual revision records
+`validation/qa-results.json`, and `publish-qa-results` validates it against the approved script and
+posts a `Resultado QA` comment in Linear (and in the PR once it exists) with screenshots and
+command output. The `manual-revision` checkpoint requires every case to be `PASS`, or `WAIVED`
+with the user's own instruction. Specs approved before this section keep the previous flow. See
+`skills/issue-delivery-orchestrator/references/qa-script.md`.
+
 ## Conductor Cloud
 
 Issues whose spec and tickets are already approved can run end to end in a Conductor Cloud

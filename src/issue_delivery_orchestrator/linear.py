@@ -147,6 +147,33 @@ class LinearClient:
         if not data.get("commentCreate", {}).get("success"):
             raise OrchestrationError("Linear commentCreate did not succeed")
 
+    def upsert_comment(self, issue_id: str, marker: str, body: str) -> str:
+        """Update the comment whose body contains `marker`, or create it."""
+        for comment in self.issue_comments(issue_id):
+            if marker in comment.body:
+                query = """
+                mutation OrchestrationCommentUpdate($id: String!, $body: String!) {
+                  commentUpdate(id: $id, input: { body: $body }) { success }
+                }
+                """
+                data = self._graphql(query, {"id": comment.id, "body": body})
+                if not data.get("commentUpdate", {}).get("success"):
+                    raise OrchestrationError("Linear commentUpdate did not succeed")
+                return comment.id
+        query = """
+        mutation OrchestrationCommentCreate($issueId: String!, $body: String!) {
+          commentCreate(input: { issueId: $issueId, body: $body }) {
+            success
+            comment { id }
+          }
+        }
+        """
+        data = self._graphql(query, {"issueId": issue_id, "body": body})
+        payload = data.get("commentCreate", {})
+        if not payload.get("success"):
+            raise OrchestrationError("Linear commentCreate did not succeed")
+        return (payload.get("comment") or {}).get("id") or ""
+
     def update_description(self, issue_id: str, description: str) -> None:
         query = """
         mutation OrchestrationIssueUpdate($id: String!, $description: String!) {

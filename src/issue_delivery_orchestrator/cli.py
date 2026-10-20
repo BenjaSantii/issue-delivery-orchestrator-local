@@ -44,6 +44,12 @@ from .pr_quality import (
     publish_validation,
     record_pre_review,
 )
+from .qa_script import (
+    approved_qa_cases,
+    qa_comment_body,
+    qa_comment_marker,
+    validate_qa_results,
+)
 from .linear import (
     LinearClient,
     extract_marker_block,
@@ -194,6 +200,12 @@ def parser() -> argparse.ArgumentParser:
     linear_block.add_argument("--block", required=True, choices=("spec", "tickets"))
     linear_block.add_argument("--body-file", type=Path, required=True)
 
+    qa = actions.add_parser(
+        "publish-qa-results",
+        help="Validate QA results against the approved QA Script and publish them",
+    )
+    qa.add_argument("--results", type=Path, required=True)
+
     evidence = actions.add_parser("publish-evidence")
     evidence.add_argument("--manifest", type=Path, required=True)
 
@@ -324,6 +336,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
                 state,
                 Path(state["worktree"]) / manifest,
             )
+            _require_published_qa(state, artifacts.get("qa-results"))
         if args.phase in {"pr-creation", "review-convergence"}:
             assert_validation_current(state)
         if args.phase == "review-convergence":
@@ -396,6 +409,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return ensure_pull_request(state, args.body_file, args.title)
     if args.action == "publish-linear-block":
         return publish_linear_block(state, args.block, args.body_file)
+    if args.action == "publish-qa-results":
+        return publish_qa_results(state, args.results)
     if args.action == "publish-evidence":
         linear, _ = _verified_linear()
         github = GitHubClient(Path(state["worktree"]))
@@ -823,6 +838,73 @@ def publish_linear_block(
         "commentsEnabled": configuration.linear_comments_enabled,
         "updated": True,
     }
+
+
+def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, Any]:
+    configuration = settings()
+    worktree = Path(state["worktree"])
+    results = validate_qa_results(state, _resolve_in_worktree(results_file, worktree))
+    if results is None:
+        raise RunBlocked("The approved spec has no QA Script; there are no QA results to publish")
+
+    linear, _ = _verified_linear()
+    issue = linear.issue(state["issue"]["identifier"])
+    asset_urls = {
+        screenshot: linear.upload_file(worktree / screenshot)
+        for case in results["cases"]
+        for screenshot in case["screenshots"]
+    }
+    body = qa_comment_body(state["runId"], results, asset_urls, worktree)
+    if configuration.linear_comments_enabled:
+        linear_target = {
+            "commentId": linear.upsert_comment(issue.id, qa_comment_marker(state["runId"]), body)
+        }
+    else:
+        linear.update_description(
+            issue.id,
+            upsert_marker_block(
+                issue.description,
+                marker_prefix=configuration.linear_marker_prefix,
+                block="qa-results",
+                body=body,
+            ),
+        )
+        linear_target = {"descriptionBlock": "qa-results"}
+
+    github_target = None
+    if state.get("pr"):
+        github = GitHubClient(worktree)
+        github.verify_identity()
+        marker = f"<!-- issue-delivery-qa:{state['runId']} -->"
+        github_target = {
+            "commentId": github.upsert_comment(
+                int(state["pr"]["number"]), marker, f"{marker}\n{body}"
+            )
+        }
+
+    state["qa"] = {
+        "verifiedCommit": results["verifiedCommit"],
+        "publishedAt": now(),
+        "cases": {case["id"]: case["status"] for case in results["cases"]},
+        "linear": linear_target,
+        "github": github_target,
+    }
+    save_state(state)
+    return {"published": True, "qa": state["qa"]}
+
+
+def _require_published_qa(state: dict[str, Any], results_artifact: str | None) -> None:
+    if approved_qa_cases(state) is None:
+        return
+    if not results_artifact:
+        raise RunBlocked("The approved spec has a QA Script; manual revision requires qa-results")
+    results = validate_qa_results(state, Path(state["worktree"]) / results_artifact)
+    published = (state.get("qa") or {}).get("verifiedCommit")
+    if published != results["verifiedCommit"]:
+        raise RunBlocked(
+            "Publish the QA results for the current commit with publish-qa-results "
+            "before completing manual revision"
+        )
 
 
 def final_cleanup(state: dict[str, Any], *, force: bool) -> dict[str, Any]:
