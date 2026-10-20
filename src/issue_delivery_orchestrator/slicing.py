@@ -96,7 +96,8 @@ def evaluate(state: dict[str, Any], measured: dict[str, Any]) -> dict[str, Any]:
     if product > threshold:
         reasons.append(f"{product} product lines exceed {threshold}")
     if estimate:
-        limit = max(int(estimate * slicing.estimate_deviation), reprompt_floor)
+        # An estimate overrun cannot request a split below the PR-size threshold.
+        limit = max(int(estimate * slicing.estimate_deviation), threshold)
         if product > limit:
             reasons.append(
                 f"{product} product lines exceed the estimate {estimate} "

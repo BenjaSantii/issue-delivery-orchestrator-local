@@ -1,13 +1,15 @@
 # Slicing en PRs más chicas
 
-PRs de más de ~1500 líneas acumularon entre 4 y 24 corridas del reviewer; las de menos de 350
-casi no tuvieron defectos. Dividir reduce ese costo, pero no siempre vale la pena: dividir es
-siempre una **decisión del usuario**, nunca automática, y mantener un solo PR es una respuesta
-válida.
+Mantener una PR por issue. Proponer dividir sólo al superar el umbral de tamaño: tocar varias
+apps o dueños y desviarse de la estimación no justifican dividir por sí solos. Dividir es
+siempre una **decisión del usuario**, nunca automática; mantener una sola PR sigue siendo válido.
 
-Umbrales del perfil (`slicing`): `maxProductLines` (800), `estimateDeviation` (1.5) y
+Umbrales del perfil (`slicing`): `maxProductLines` (4000), `estimateDeviation` (1.5) y
 `maxStackDepth` (3). Sólo cuentan líneas de producto; tests, migraciones generadas, lockfiles,
 snapshots de contrato y Markdown se informan aparte o se excluyen.
+El tamaño suma adiciones y eliminaciones del delta de producto. Exactamente 4000 líneas no
+disparan la propuesta; desde 4001 sí. La desviación de estimación nunca dispara una decisión
+por debajo o en el umbral de tamaño.
 
 ## Mecanismo según dependencia
 
@@ -38,8 +40,8 @@ cubre ese slice, y un bloque de tickets sólo con los suyos. No reabrir el Grill
 ## 1. Al planificar (ticket publisher)
 
 Cada ticket declara `Estimated size`. Registrar la suma con
-`issue-delivery <issue> size-estimate --lines <n>`. Si la suma supera `maxProductLines` o el
-desglose toca más de una app con dueño distinto, proponer slices al presentar el desglose: tickets
+`issue-delivery <issue> size-estimate --lines <n>`. Sólo si la suma supera `maxProductLines`,
+proponer slices al presentar el desglose: tickets
 por slice, dependencias entre slices, mecanismo y por qué. El usuario puede rechazarlo; registrar
 entonces `size-decision --decision single-pr --reason "<motivo del usuario>"`.
 

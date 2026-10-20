@@ -268,6 +268,9 @@ commands, review bots, evidence branch, and Linear markers without changing the 
 legacy single `review.blockerBot` string is still accepted).
 `slicing` sets the PR-size thresholds (`maxProductLines`, `estimateDeviation`, `maxStackDepth`)
 that pause a run for a split-or-keep decision; the engine never splits on its own.
+TurboShop keeps one PR per issue through 4000 product lines (additions plus deletions).
+Only a larger delta can request a split decision; estimate overruns or multiple app owners alone
+do not trigger one. Tests and generated artifacts do not count toward this threshold.
 
 ## Start a run
 
