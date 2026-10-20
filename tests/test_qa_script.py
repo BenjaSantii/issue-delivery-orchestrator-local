@@ -111,6 +111,44 @@ class LintTests(unittest.TestCase):
         self.assertIn("QA ID `Q-9` must look like QA-001", errors)
         self.assertIn("`Q-9` needs Steps", errors)
 
+    def test_stories_with_a_surface_tag_are_detected(self):
+        tagged = spec().replace("- US-001: As", "* US-001 `UI`: As").replace(
+            "- US-002: As", "* US-002 `API-assembled`: As"
+        )
+
+        self.assertEqual(lint_qa_script(tagged), [])
+        self.assertIn(
+            "`US-002` needs at least one happy-path QA case",
+            lint_qa_script(tagged.replace("| QA-002 | happy-path |", "| QA-002 | edge-case |")),
+        )
+
+    def test_scope_limits_coverage_to_the_slice(self):
+        extra = spec().replace(
+            "- US-002: As a manager, I want the report, so that I see skipped stops.\n",
+            "- US-002: As a manager, I want the report, so that I see skipped stops.\n"
+            "- US-003: As a manager, I want transfers, so that work moves.\n",
+        )
+        self.assertIn("`US-003` needs at least one happy-path QA case", lint_qa_script(extra))
+
+        scoped = extra.replace("## QA Script\n\n", "## QA Script\n\nScope: US-001, US-002\n\n")
+        self.assertEqual(lint_qa_script(scoped), [])
+
+        outside = scoped.replace(
+            "| QA-002 | happy-path | US-002 |", "| QA-002 | happy-path | US-002 US-003 |"
+        )
+        self.assertIn("QA Script covers `US-003`, outside its scope", lint_qa_script(outside))
+
+    def test_scope_without_user_stories_section_still_needs_happy_paths(self):
+        slice_block = (
+            "Spec ID: SPEC-TS-1\n\n### Entrega 2 de 3\n\n## QA Script\n\nScope: US-001\n\n"
+            + HEADER
+            + "| QA-001 | edge-case | US-001 | UI | x | y | z | — |\n"
+        )
+
+        self.assertEqual(
+            lint_qa_script(slice_block), ["`US-001` needs at least one happy-path QA case"]
+        )
+
     def test_legacy_spec_has_no_cases(self):
         self.assertIsNone(qa_cases(spec(qa=False)))
 

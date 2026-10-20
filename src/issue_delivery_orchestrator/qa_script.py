@@ -94,7 +94,13 @@ def lint_qa_script(spec: str) -> list[str]:
                     "under Regression test"
                 )
 
-    stories = user_story_ids(spec)
+    declared = user_story_ids(spec)
+    scope = qa_scope(section)
+    stories = scope if scope is not None else declared
+    if scope is not None and declared:
+        for story in scope:
+            if story not in declared:
+                errors.append(f"QA Script scope names unknown user story `{story}`")
     happy = {
         story
         for case in cases
@@ -105,7 +111,9 @@ def lint_qa_script(spec: str) -> list[str]:
         if story not in happy:
             errors.append(f"`{story}` needs at least one happy-path QA case")
     for story in sorted({s for case in cases for s in _STORY_ID.findall(case["Covers"])}):
-        if story not in stories:
+        if scope is not None and story not in scope:
+            errors.append(f"QA Script covers `{story}`, outside its scope")
+        elif declared and story not in declared:
             errors.append(f"QA Script covers unknown user story `{story}`")
 
     covered = " ".join(case["Covers"] for case in cases)
@@ -121,7 +129,13 @@ def lint_qa_script(spec: str) -> list[str]:
 
 def user_story_ids(spec: str) -> list[str]:
     section = _section(spec, "## User Stories") or ""
-    return re.findall(r"(?m)^\s*[-*]\s*(US-\d{3})\s*:", section)
+    return re.findall(r"(?m)^\s*[-*]\s*(US-\d{3})\b", section)
+
+
+def qa_scope(section: str) -> list[str] | None:
+    """Stories this issue's script must cover, when a shared spec spans several slices."""
+    match = re.search(r"(?m)^Scope:\s*(.+)$", section)
+    return _STORY_ID.findall(match.group(1)) if match else None
 
 
 def applicable_risks(spec: str) -> list[str]:

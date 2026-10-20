@@ -31,6 +31,18 @@ resultados.
 - `Regression test`: obligatorio en `concurrency`; la ruta del test de carrera que el ticket
   commitea (por ejemplo `*.race.db.spec.ts`). `—` en los demás tipos.
 
+Cuando un spec compartido se entrega en varias issues (slices), cada issue lleva su propio
+`## QA Script` con una línea `Scope:` antes de la tabla, con sus historias:
+
+```md
+## QA Script
+
+Scope: US-001, US-002, US-003, US-004
+```
+
+Las reglas de cobertura se aplican sólo a esas historias, y un caso no puede cubrir historias
+fuera del scope.
+
 ## Reglas de cobertura
 
 El motor rechaza el spec si no se cumplen:
@@ -47,7 +59,16 @@ que el spec nombre. No agregar casos que no falsen un criterio del spec.
 
 ## Ejecutar
 
-Ejecutar todos los casos sobre el SHA final y un Local Runtime registrado.
+Ejecutar todos los casos sobre el SHA final y un Local Runtime registrado, en una sola pasada:
+
+- Levantar las apps una vez con `pnpm local-runtime ensure-services` y reutilizarlas para todos
+  los casos. No reiniciar servicios entre casos; restablecer la precondición de cada caso con las
+  cuentas y datos sembrados.
+- Ordenar al final los casos que necesitan un servicio caído (por ejemplo ERP detenido o backend
+  cortado a mitad de una escritura). Bajar sólo ese servicio, ejecutar el caso y volver a
+  levantarlo con `ensure-services` antes del siguiente.
+- Tras una reparación, dejar que el modo watch recargue el cambio o reiniciar sólo la app
+  afectada, y repetir únicamente los casos que esa reparación invalida.
 
 - **UI**: con el reviewer del modo (`issue-delivery-cua-review`, `issue-delivery-browser-review`
   o `issue-delivery-playwright-review`) y `mobile-web-reviewer` en historias de teléfono. Usar
