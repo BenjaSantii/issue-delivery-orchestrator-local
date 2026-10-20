@@ -16,8 +16,14 @@ En Conductor, desde el controlador con acceso al CLI autenticado del host:
 ```bash
 python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
   --workspace <workspace-id> --implementation-session <session-id> \
-  --url http://localhost:<puerto> --model gpt-6.1-sol --effort high
+  --url http://localhost:<puerto>
 ```
+
+`--implementation-session` identifica el chat que llama al QA. El comando hereda su agente,
+modelo y esfuerzo desde la configuración real de Conductor; no fija Codex ni acepta overrides.
+Si la sesión no expone modelo/esfuerzo explícitos, seleccionarlos en Conductor antes de repetir;
+no adivinar valores ni tomar los defaults actuales del catálogo. Verifica la configuración del
+chat creado y no reutiliza silenciosamente un QA con modelo distinto.
 
 El comando crea otra sesión en el mismo workspace, sin resume ni historial heredado. Registra
 su ID y fija el commit y los hashes de los artefactos aprobados. Reintentar el comando recupera

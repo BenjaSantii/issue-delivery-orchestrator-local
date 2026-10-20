@@ -39,8 +39,6 @@ def configure(actions: Any) -> None:
     qa.add_argument("--workspace", required=True)
     qa.add_argument("--implementation-session", required=True)
     qa.add_argument("--url", action="append", required=True)
-    qa.add_argument("--model", default="gpt-6.1-sol")
-    qa.add_argument("--effort", default="high")
     native = actions.add_parser("qa-register", help="Register a fresh native-host QA conversation receipt")
     native.add_argument("--receipt", type=Path, required=True)
 
@@ -111,7 +109,7 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
         return publish(state, linear_factory, configuration)
     if args.action == "qa-session":
         return fresh_qa.launch(state, args.workspace, args.implementation_session,
-                               args.url, args.model, args.effort)
+                               args.url)
     if run_mode(state) == "conductor":
         raise RunBlocked("Use qa-session to create and verify the actual Conductor QA chat")
     receipt = _artifact(state, args.receipt)

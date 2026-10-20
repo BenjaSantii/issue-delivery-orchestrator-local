@@ -67,6 +67,8 @@ the correct invocation syntax.
 Conductor does not require or run LocalReviewer before opening a PR. Report it as NOT_RUN;
 browser QA, CI parity and GitHub review convergence remain required. Other modes keep the
 local-review gate and permissions below.
+Fresh Conductor QA chats inherit the calling chat's agent, model and reasoning effort; they
+do not force Codex or a fixed model. The review still starts with a new conversation context.
 
 A request to check blockers reads and classifies existing feedback. It does not authorize repairs,
 tests, commits, pushes, comment resolution, or LocalReviewer. Invoking the convergence skill after

@@ -92,29 +92,47 @@ class FreshQATests(unittest.TestCase):
         with self.assertRaisesRegex(OrchestrationError, "inside the worktree"):
             validate_qa_results(self.state, path)
 
-    def test_launches_fresh_conductor_chat_once_and_pins_model_and_contract(self):
-        self.state.pop("qaSession")
-        sessions = [{"id": "implementation", "name": "Entrega"}]
+    def test_launch_inherits_calling_chat_configuration_for_claude_and_codex(self):
         from issue_delivery_orchestrator.util import run as actual_run
-        created = []
-        def fake_run(args, **kwargs):
-            if args[0] != "conductor":
-                return actual_run(args, **kwargs)
-            created.append((args, kwargs["input_text"]))
-            sessions.append({"id": "review", "name": args[args.index("--name") + 1],
-                             "model": "gpt-6.1-sol", "effort": "high"})
-            return SimpleNamespace(stdout='{"id":"review"}')
-        with patch("issue_delivery_orchestrator.fresh_qa.conductor_cli", return_value="conductor"), patch(
-            "issue_delivery_orchestrator.fresh_qa.workspace_sessions", side_effect=lambda *_: sessions.copy()
-        ), patch("issue_delivery_orchestrator.fresh_qa.run", side_effect=fake_run):
-            first = fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"], "gpt-6.1-sol", "high")
-            second = fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"], "gpt-6.1-sol", "high")
-            with self.assertRaisesRegex(RunBlocked, "different model/effort"):
-                fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"], "other-model", "high")
-        self.assertEqual(first, second)
-        self.assertEqual(len(created), 1)
-        self.assertNotIn("--resume", created[0][0])
-        self.assertEqual(first["reviewSessionId"], "review")
-        self.assertIn(self.state["artifacts"]["spec"], created[0][1])
+        for agent, model, effort in (("codex", "gpt-6.1-sol", "high"), ("claude", "opus-5-5-1m", "max")):
+            with self.subTest(agent=agent):
+                self.state.pop("qaSession", None)
+                sessions = [{"id": "implementation", "name": "Entrega", "model": model, "effort": effort}]
+                catalog = {"agents": [{"agent": agent, "models": [model], "efforts": [effort, "low"]}]}
+                created = []
+                def fake_run(args, **kwargs):
+                    if args[0] != "conductor":
+                        return actual_run(args, **kwargs)
+                    if args[1] == "model":
+                        return SimpleNamespace(stdout=json.dumps(catalog))
+                    created.append((args, kwargs["input_text"]))
+                    sessions.append({"id": "review", "name": args[args.index("--name") + 1],
+                                     "model": model, "effort": effort})
+                    return SimpleNamespace(stdout='{"id":"review"}')
+                with patch("issue_delivery_orchestrator.fresh_qa.conductor_cli", return_value="conductor"), patch(
+                    "issue_delivery_orchestrator.fresh_qa.workspace_sessions", side_effect=lambda *_: sessions.copy()
+                ), patch("issue_delivery_orchestrator.fresh_qa.run", side_effect=fake_run):
+                    first = fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"])
+                    second = fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"])
+                    sessions[0]["effort"] = "low"
+                    with self.assertRaisesRegex(RunBlocked, "different agent/model/effort"):
+                        fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"])
+                self.assertEqual(first, second)
+                self.assertEqual(len(created), 1)
+                args = created[0][0]
+                for flag, value in (("--agent", agent), ("--model", model), ("--effort", effort)):
+                    self.assertEqual(args[args.index(flag) + 1], value)
+                self.assertNotIn("--resume", args)
+                self.assertEqual(first["reviewSessionId"], "review")
+                self.assertEqual(first["agent"], agent)
+                self.assertIn(self.state["artifacts"]["spec"], created[0][1])
         with self.assertRaisesRegex(RunBlocked, "different, fresh"):
             fresh_qa.register(self.state, "implementation", "implementation", host_receipt="fixture")
+
+    def test_does_not_guess_missing_or_unknown_calling_chat_configuration(self):
+        catalog = {"agents": [{"agent": "codex", "models": ["gpt-6.1-sol"], "efforts": ["high"]}]}
+        with patch("issue_delivery_orchestrator.fresh_qa.run", return_value=SimpleNamespace(stdout=json.dumps(catalog))):
+            for caller in ({}, {"model": "gpt-6.1-sol"}, {"model": "unknown", "effort": "high"},
+                           {"model": "gpt-6.1-sol", "effort": "unknown"}):
+                with self.subTest(caller=caller), self.assertRaises(RunBlocked):
+                    fresh_qa.caller_configuration("conductor", caller)

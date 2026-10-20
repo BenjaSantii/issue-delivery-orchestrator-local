@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .cloud_launch import conductor_cli, workspace_sessions
-from .errors import OrchestrationError, RunBlocked
+from .errors import RunBlocked
 from .state import now, run_mode, run_root, save_state
 from .util import ensure_within, run
 
@@ -76,8 +76,19 @@ def register(state: dict[str, Any], implementation_session: str, review_session:
     return entry
 
 
+def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
+    model, effort = session.get("model"), session.get("effort")
+    if not isinstance(model, str) or not model.strip() or not isinstance(effort, str) or not effort.strip():
+        raise RunBlocked("Calling chat has no explicit model/effort; select them in Conductor before starting QA")
+    catalog = json.loads(run([cli, "model", "--json"]).stdout)
+    matches = [item for item in catalog.get("agents", []) if model in item.get("models", [])]
+    if len(matches) != 1 or effort not in matches[0].get("efforts", []):
+        raise RunBlocked("Cannot identify the calling chat's agent/model/effort in the Conductor catalog")
+    return {"agent": matches[0]["agent"], "model": model, "effort": effort}
+
+
 def launch(state: dict[str, Any], workspace: str, implementation_session: str,
-           urls: list[str], model: str, effort: str) -> dict[str, Any]:
+           urls: list[str]) -> dict[str, Any]:
     if run_mode(state) != "conductor" or not state.get("observabilityVersion"):
         raise RunBlocked("Automatic QA chat creation is supported for new Conductor runs")
     if not state.get("runtimes") or not urls:
@@ -85,33 +96,35 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     pinned = snapshot(state)
     cli = conductor_cli()
     sessions = workspace_sessions(cli, workspace)
-    if implementation_session not in {s.get("id") for s in sessions}:
+    caller = next((s for s in sessions if s.get("id") == implementation_session), None)
+    if caller is None:
         raise RunBlocked("Implementation session is not in this Conductor workspace")
+    configuration = caller_configuration(cli, caller)
     previous = state.get("qaSession") or {}
     if all(previous.get(key) == value for key, value in pinned.items()):
         if previous.get("implementationSessionId") != implementation_session:
             raise RunBlocked("A different implementation session owns this QA attempt")
-        if previous.get("model") != model or previous.get("effort") != effort:
-            raise RunBlocked("The existing QA conversation uses a different model/effort")
+        if any(previous.get(key) != value for key, value in configuration.items()):
+            raise RunBlocked("The existing QA conversation uses a different agent/model/effort from the calling chat")
         return previous
-    contract = hashlib.sha256(json.dumps(pinned, sort_keys=True).encode()).hexdigest()[:8]
+    contract = hashlib.sha256(json.dumps({**pinned, **configuration}, sort_keys=True).encode()).hexdigest()[:8]
     name = f"QA {state['runId']} {pinned['verifiedCommit'][:12]} {contract}"
     # Recover a created session after an interrupted response without duplicating the agent.
     candidates = [s for s in sessions if s.get("name") == name]
     if not candidates:
         prompt = qa_prompt(state, pinned, urls)
-        run([cli, "session", "create", "--workspace", workspace, "--agent", "codex",
-             "--model", model, "--effort", effort, "--name", name,
+        run([cli, "session", "create", "--workspace", workspace, "--agent", configuration["agent"],
+             "--model", configuration["model"], "--effort", configuration["effort"], "--name", name,
              "--message-file", "-", "--json"], input_text=prompt)
         candidates = [s for s in workspace_sessions(cli, workspace) if s.get("name") == name]
     if len(candidates) != 1:
         raise RunBlocked("Cannot identify the fresh QA conversation; inspect before retrying")
     selected = candidates[0]
-    if selected.get("model") != model or selected.get("effort") != effort:
-        raise RunBlocked("QA session model/effort does not match the requested configuration")
+    if any(selected.get(key) != configuration[key] for key in ("model", "effort")):
+        raise RunBlocked("QA session model/effort does not match the calling chat")
     entry = register(state, implementation_session, selected["id"],
                      host_receipt=f"conductor-workspace:{workspace}", pinned=pinned)
-    entry.update({"model": model, "effort": effort, "workspaceId": workspace})
+    entry.update({**configuration, "workspaceId": workspace})
     save_state(state)
     return entry
 
