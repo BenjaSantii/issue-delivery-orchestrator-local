@@ -64,6 +64,11 @@ que el spec nombre. No agregar casos que no falsen un criterio del spec.
 
 ## Ejecutar
 
+En runs con `observabilityVersion: 1`, ejecutar desde la conversación independiente de
+[fresh-qa.md](fresh-qa.md). Incluir reviewSessionId y los artefactos de persistencia por caso;
+un PASS de pantalla/API no sustituye comprobar las consecuencias en DB. El controlador consume
+el resultado y publica, sin alterar el contrato de runs anteriores.
+
 Ejecutar todos los casos sobre el SHA final y un Local Runtime registrado, en una sola pasada:
 
 - Levantar las apps una vez con `pnpm local-runtime ensure-services` y reutilizarlas para todos

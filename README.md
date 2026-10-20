@@ -274,6 +274,11 @@ do not trigger one. Tests and generated artifacts do not count toward this thres
 
 ## Start a run
 
+New runs also record per-ticket/phase delivery metrics and use a fresh QA conversation that
+verifies persisted database consequences. See [run metrics](skills/issue-delivery-orchestrator/references/run-metrics.md)
+and [independent QA](skills/issue-delivery-orchestrator/references/fresh-qa.md). The contract is
+versioned in new run state; existing deliveries retain their previous behavior.
+
 Open a new Codex or Claude Code session in the intended product worktree and invoke the
 `issue-delivery-orchestrator` skill with a Linear issue. For a host-independent CLI run, start the
 agent in the prepared checkout; Vanilla will be selected automatically when no Codex or Superset
@@ -351,7 +356,9 @@ Inside the workspace the agent prepares the VM following
 `--mode conductor`. UI stories are verified with `issue-delivery-playwright-review`; phone stories
 use `mobile-web-reviewer`, which emulates 360×800 and 390×844 touch devices, checks that the
 on-screen keyboard does not hide focused fields or the primary action, and measures drag and swipe
-smoothness. Criteria that only a native device can show are reported as `NATIVE-ONLY`.
+smoothness. Conductor always uses browser simulation and never requires a phone or ADB.
+Native OS limitations are informational (`nativeValidation: not-executed`), not blockers for
+the simulated web review. Native ADB evidence is available only outside Conductor when requested.
 
 The mobile helpers have their own browser test suite:
 

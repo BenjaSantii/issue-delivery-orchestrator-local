@@ -1,5 +1,7 @@
 # Evidencia nativa mediante ADB
 
+No aplica a Conductor Cloud: ese modo siempre usa simulación web y no exige dispositivos.
+
 Usar esta excepción sólo cuando el usuario solicite o autorice probar una app Android nativa mediante ADB. No sustituye la revisión de interfaces web ni cambia el modo, worktree o reviewer persistido del run. ADB puede conectarse por USB o depuración inalámbrica según lo acordado con el usuario.
 
 Registrar la instrucción real del usuario, dispositivo y build probado. No interpretar capturas antiguas, una conexión ADB exitosa o un test con mocks como una prueba funcional nativa. Ejecutar los escenarios afectados y guardar PNG originales bajo el run. Conservar los límites de la prueba y atribuir la evidencia al commit exacto, reutilizando sólo comportamientos no invalidados.

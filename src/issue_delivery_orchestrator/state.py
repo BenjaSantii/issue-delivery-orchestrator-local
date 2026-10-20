@@ -79,6 +79,9 @@ def create_state(
         (root / child).mkdir(parents=True, exist_ok=True)
     state = {
         "version": 1,
+        # Deliberately absent from old state files: do not retrofit in-flight deliveries.
+        "observabilityVersion": 1,
+        "phaseMeasurement": {"startedAt": now(), "startCommit": adopted_head},
         "runId": run_id,
         "startedAt": now(),
         "updatedAt": now(),

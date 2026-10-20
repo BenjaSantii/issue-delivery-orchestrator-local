@@ -13,7 +13,7 @@ from .annotations import (
 )
 from .errors import OrchestrationError
 from .headless_assistance import validate_headless_assistance
-from .state import review_method
+from .state import review_method, run_mode
 from .util import atomic_write_json, ensure_within, read_json, run
 
 
@@ -165,6 +165,8 @@ def _verification(
         raise OrchestrationError("Evidence publication requires UI verification status PASS")
     selected_provider = review_method(state)
     declared_provider = str(verification.get("provider") or "").strip()
+    if run_mode(state) == "conductor" and (declared_provider == "adb" or verification.get("nativeVerified") is True):
+        raise OrchestrationError("Conductor requires web simulation; physical-device/ADB evidence is not used")
     if declared_provider and declared_provider not in {"cua-driver", "codex-browser", "playwright", "adb"}:
         raise OrchestrationError(
             f"Evidence verification has unsupported provider {declared_provider}"
@@ -226,4 +228,6 @@ def _verification(
         receipt["provider"] = declared_provider or selected_provider
     if native_review is not None:
         receipt["nativeReview"] = native_review
+    if run_mode(state) == "conductor":
+        receipt.update({"validationScope": "web-simulation", "nativeVerified": False})
     return receipt

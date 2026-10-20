@@ -116,6 +116,9 @@ integration signal instead of repeating the same internal scenarios across layer
 For UI changes, identify the affected user flows and expected visible result so Issue Delivery
 Orchestrator can perform final computer-use validation and publish current screenshots. Do not turn
 this fixed closure phase into a separate implementation ticket.
+For Conductor, define mobile acceptance as web simulation (phone viewport, touch, simulated
+keyboard and focused code tests for lifecycle callbacks). Do not introduce a physical-device/ADB
+requirement merely because the product is Expo/native. Record OS-specific limits as observations.
 
 ## Design the QA script
 
@@ -130,6 +133,11 @@ system, not a list of unit tests:
   `command` and checks the final invariant, plus the committed race test that keeps protecting it
   (`Regression test`, usually a `*.race.db.spec.ts`), which must also appear in `Testing Decisions`;
 - every `Applies: Yes` risk category named in `Covers`.
+
+For cases that persist data, retry writes, roll back or reject mutations, include `DB` in the
+`Evidence` cell and name the final invariant to check (IDs, values, relations, audit, counts or
+unchanged state). Verification uses before/after read-only queries on the local runtime DB,
+not just UI success or an HTTP status. Purely visual cases may explain why DB is not applicable.
 
 Present the QA Script with the spec: its approval is part of the spec approval.
 

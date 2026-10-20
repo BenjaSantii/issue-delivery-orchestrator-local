@@ -8,8 +8,16 @@ description: "Verificar historias UI y reparaciones con Playwright (Chromium hea
 Actuar como verificador de UI, no como implementador. Probar comportamiento observable contra el
 spec aprobado y producir el mismo contrato de evidencia que Cua Revision, declarando
 `provider: playwright`.
+En Conductor, incluso las historias móviles se validan SIEMPRE en navegador con la skill
+`issue-delivery-mobile-web-review`. No solicitar dispositivo/ADB ni devolver NATIVE-ONLY por
+limitaciones de simulación; documentarlas sin afirmar que se observó el SO nativo.
 
 ## Preflight
+
+En runs nuevos instrumentados, actuar desde la conversación independiente registrada por
+el controlador según [fresh-qa.md](../issue-delivery-orchestrator/references/fresh-qa.md).
+Además de UI, entregar al evaluador de QA la comprobación de persistencia de los casos que
+escriben datos. No aprobar por toast/200 ni usar la conversación del implementador como reviewer.
 
 1. Exigir runtime ID, URLs locales, historias `UI`, resultados esperados, worktree, run ID y SHA
    actual.

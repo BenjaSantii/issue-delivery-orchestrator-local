@@ -97,6 +97,14 @@ class EvidenceVerificationTests(unittest.TestCase):
         )
 
         self.assertEqual(receipt["provider"], "playwright")
+        self.assertEqual(receipt["validationScope"], "web-simulation")
+        self.assertFalse(receipt["nativeVerified"])
+
+    def test_conductor_uses_web_simulation_even_with_adb_authorization_metadata(self):
+        self.state["mode"] = {"name": "conductor"}
+        self.state["reviewer"] = {"method": "playwright"}
+        with self.assertRaisesRegex(OrchestrationError, "requires web simulation"):
+            _verification(self.adb_manifest(), self.state, self.worktree)
 
     def test_conductor_run_requires_declared_playwright_provider(self):
         self.state["mode"] = {"name": "conductor"}

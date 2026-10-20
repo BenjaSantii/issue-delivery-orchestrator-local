@@ -17,6 +17,8 @@ from .errors import OrchestrationError, RunBlocked
 from .spec_lint import RISK_CATEGORIES, _blank, _section, _table
 from .state import run_root
 from .util import ensure_within, read_json, run
+from .fresh_qa import validate_session
+from .qa_persistence import validate_persistence
 
 QA_HEADING = "## QA Script"
 QA_HEADER = (
@@ -169,6 +171,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
     results = read_json(results_path)
     if not isinstance(results, dict) or results.get("qaVersion") != 1:
         raise OrchestrationError("QA results must be a JSON object with qaVersion 1")
+    validate_session(state, results)
 
     head = run(["git", "rev-parse", "HEAD"], cwd=worktree).stdout.strip()
     if str(results.get("verifiedCommit") or "") != head:
@@ -252,6 +255,14 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
                         raise OrchestrationError(
                             f"{qa_id} regression test `{test_path}` is not committed"
                         )
+            if state.get("observabilityVersion"):
+                def persistence_file(raw: str) -> str:
+                    path = _run_file(root, worktree, raw, qa_id)
+                    _reject_secrets(qa_id, (worktree / path).read_text(errors="replace"))
+                    return str(path)
+                entry["persistence"] = validate_persistence(
+                    case, item, results["runtimeId"], persistence_file, worktree)
+                _reject_secrets(qa_id, str(entry["persistence"]))
         normalized.append(entry)
     if failing:
         raise RunBlocked(
@@ -262,6 +273,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
         "verifiedCommit": head,
         "runtimeId": results["runtimeId"],
         "verifiedAt": results.get("verifiedAt"),
+        "reviewSessionId": results.get("reviewSessionId"),
         "cases": normalized,
     }
 
@@ -305,6 +317,14 @@ def qa_comment_body(
                 f"Excepción aprobada por el usuario: {case['waiver']['reason']} "
                 f"(«{case['waiver']['userInstruction']}»)"
             )
+        persistence = case.get("persistence") or {}
+        if persistence:
+            details.append(f"Persistencia: {persistence['status']} — "
+                           f"{persistence.get('expectation') or persistence.get('reason')}")
+            for key in ("before", "after"):
+                if persistence.get(key):
+                    excerpt = "\n".join((worktree / persistence[key]).read_text().splitlines()[:OUTPUT_EXCERPT_LINES])
+                    details.append(f"DB {key}:\n```json\n{excerpt}\n```")
         if details:
             sections += ["", f"#### {case['id']}", "", *details]
     return "\n".join(sections) + "\n"

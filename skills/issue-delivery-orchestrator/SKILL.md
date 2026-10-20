@@ -198,6 +198,11 @@ Prohibir el handoff hasta disponer de evidencia posterior al último cambio para
 
 ## 2. Implement
 
+En runs con `observabilityVersion: 1`, leer [run-metrics.md](references/run-metrics.md).
+El controlador registra metrics-start antes de cada ticket y metrics-finish tras su intento,
+actualizando el comentario de Linear. Usar otro intento para reparaciones y no inventar tokens
+si aún no terminó el turno del host. Los checkpoints registran las fases automáticamente.
+
 Procesar tickets en su orden aprobado. Antes de cada uno, entregar a `issue-delivery-implement` el spec completo, el ticket, el SHA inicial y la validación declarada para que la delegue a `test`.
 
 - Terminar primero los tickets AFK no bloqueados.
@@ -248,7 +253,19 @@ con git a mano.
 
 ## 4. Revisión manual
 
-Para apps Android nativas, cuando el usuario autorice ADB, aplicar [native-adb-evidence.md](references/native-adb-evidence.md). Esta excepción permite `provider=adb` en las evidencias nativas sin cambiar el modo ni el reviewer web persistidos. Las reglas de reviewer y provider de esta sección se aplican a web; la excepción nativa conserva los demás gates.
+Si `observabilityVersion: 1`, leer [fresh-qa.md](references/fresh-qa.md) y abrir/registrar una
+conversación nueva de QA, con el mismo runtime y los artefactos aprobados fijados al SHA.
+Los pasos de verificación siguientes los ejecuta ese reviewer, no el implementador. El
+controlador espera sus resultados, publica la evidencia y completa el checkpoint. Verificar
+consecuencias persistidas en DB, además del comportamiento UI/API. Los runs anteriores mantienen
+su flujo previo; no añadirles el flag ni actualizar sus chats para aplicar estas reglas.
+
+En modo Conductor, la validación móvil siempre es simulación web según
+`issue-delivery-mobile-web-review`; no requiere teléfono, ADB ni emulador nativo. Registrar las
+limitaciones del SO como informativas, sin afirmar validación nativa ni bloquear por dispositivo.
+Fuera de Conductor, si el usuario pide validación Android nativa y autoriza ADB, aplicar
+[native-adb-evidence.md](references/native-adb-evidence.md), que permite provider=adb sin cambiar
+el reviewer web persistido y conserva los demás gates.
 
 1. Inicializar un runtime persistente:
 

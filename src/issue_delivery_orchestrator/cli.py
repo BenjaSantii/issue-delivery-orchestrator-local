@@ -89,6 +89,7 @@ from .state import (
     now,
 )
 from .util import ensure_within, run
+from . import observability_cli
 
 
 def parser() -> argparse.ArgumentParser:
@@ -168,6 +169,8 @@ def parser() -> argparse.ArgumentParser:
     checkpoint = actions.add_parser("checkpoint")
     checkpoint.add_argument("--phase", required=True, choices=PHASES)
     checkpoint.add_argument("--artifact", action="append", default=[], metavar="KEY=PATH")
+    checkpoint.add_argument("--metrics-receipt", type=Path)
+    observability_cli.configure(actions)
 
     blocked = actions.add_parser("block")
     blocked.add_argument("--reason", required=True)
@@ -321,6 +324,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     )
     if args.action == "status":
         return _public_state(state)
+    if args.action in observability_cli.ACTIONS:
+        return observability_cli.dispatch(state, args, _verified_linear, configuration)
     if args.action == "reviewer-select":
         selection = select_review_method(state, args.method)
         return {"reviewer": selection, "state": _public_state(state)}
@@ -341,11 +346,14 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
             assert_validation_current(state)
         if args.phase == "review-convergence":
             assert_review_converged(state)
+        measurement = state.get("phaseMeasurement")
         complete_phase(state, args.phase, artifacts)
+        metric = observability_cli.phase_completed(
+            state, args.phase, measurement, args.metrics_receipt, _verified_linear, configuration)
         stopped: list[int] = []
         if state["status"] == "completed_preserved":
             stopped = stop_owned_processes(state)
-        return {"state": _public_state(state), "stoppedPids": stopped}
+        return {"state": _public_state(state), "stoppedPids": stopped, "metrics": metric}
     if args.action == "block":
         stopped = stop_owned_processes(state)
         block_run(state, args.reason, args.decision)
@@ -895,6 +903,8 @@ def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, A
 
 def _require_published_qa(state: dict[str, Any], results_artifact: str | None) -> None:
     if approved_qa_cases(state) is None:
+        if state.get("observabilityVersion"):
+            raise RunBlocked("New runs require an approved QA Script and fresh QA results")
         return
     if not results_artifact:
         raise RunBlocked("The approved spec has a QA Script; manual revision requires qa-results")
@@ -1110,6 +1120,8 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
         "status": state["status"],
         "currentPhase": state.get("currentPhase"),
         "reviewerMethod": review_method(state),
+        "observabilityVersion": state.get("observabilityVersion"),
+        "qaSession": state.get("qaSession"),
         "pr": state.get("pr"),
         "prTarget": pr_target(state),
         "stack": state.get("stack"),
@@ -1138,6 +1150,11 @@ def _next_action(state: dict[str, Any]) -> str:
         return "Resolve the recorded blocker, then run the resume action."
     if state["status"] == "completed_preserved":
         return "Wait for explicit human-review work or final cleanup after merge."
+    if state.get("currentPhase") == "manual-revision" and state.get("observabilityVersion"):
+        return (
+            "Start/register a fresh QA conversation for this candidate using fresh-qa.md; "
+            "reuse the runtime and verify database consequences before publishing its results."
+        )
     if (
         state.get("currentPhase") == "manual-revision"
         and run_mode(state) == "codex"

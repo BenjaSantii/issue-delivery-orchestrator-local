@@ -82,3 +82,9 @@ Entregar un recibo breve con:
 - comandos exactos, código de salida y conteos disponibles;
 - validaciones no ejecutadas y razón;
 - estado `PASS`, `FAIL` o `BLOCKED`, con atribución de cada falla.
+
+Para métricas de un run nuevo, devolver conteos observados y findings con IDs estables cuando
+estén disponibles; señalar duplicados y reparaciones. No inventar conteos o tokens y no publicar
+desde esta skill: el controlador registra el recibo según
+[run-metrics.md](../issue-delivery-orchestrator/references/run-metrics.md). Esto no amplía la suite
+que se ejecuta ni los tests que se conservan en la PR.
