@@ -179,7 +179,7 @@ def _object(data: dict[str, Any], key: str) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class SlicingSettings:
-    max_product_lines: int = 800
+    max_product_lines: int = 4000
     estimate_deviation: float = 1.5
     max_stack_depth: int = 3
 

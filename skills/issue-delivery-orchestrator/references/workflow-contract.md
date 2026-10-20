@@ -36,8 +36,9 @@ Todo artifact debe estar dentro del worktree. El motor rechaza paths externos.
   `cherry-pick` ni `pull` para integrar ramas.
   Excepción: `restack` (sólo slices hijos de un stack, `--force-with-lease`) y `slice-extract`
   (commits propios antes del primer push).
-- Tamaño: `slicing.maxProductLines` (800 líneas de producto) y `slicing.estimateDeviation` (1.5x
-  sobre `Estimated size`) pausan para una decisión del usuario; nunca dividen solos. Stack de
+- Tamaño: sólo superar `slicing.maxProductLines` (4000 líneas de producto) puede pausar para una
+  decisión de división; exactamente 4000 no pausa. `slicing.estimateDeviation` (1.5x sobre
+  `Estimated size`) no dispara una decisión por debajo de ese umbral. Nunca dividir solos. Stack de
   profundidad máxima `slicing.maxStackDepth` (3).
 
 Al alcanzar un límite, detener procesos propios, conservar estado y bloquear.

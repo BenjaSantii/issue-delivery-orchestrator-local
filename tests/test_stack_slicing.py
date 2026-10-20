@@ -72,11 +72,11 @@ class SizeTests(RepoCase):
         self.assertEqual(classify("apps/bff/src/contracts/v1/openapi.json"), "excluded")
 
     def test_pauses_over_threshold_until_single_pr_decision_then_reprompts_at_double(self):
-        self.commit("src/big.ts", "x\n" * 900, "big")
+        self.commit("src/big.ts", "x\n" * 4001, "big")
         self.commit("src/big.spec.ts", "t\n" * 500, "tests")
         result = size_check(self.state)
         self.assertEqual(result["status"], "NEEDS_DECISION")
-        self.assertEqual(result["productLines"], 900)
+        self.assertEqual(result["productLines"], 4001)
         self.assertEqual(result["testLines"], 500)
         with self.assertRaises(RunBlocked):
             assert_size_accepted(self.state)
@@ -85,17 +85,22 @@ class SizeTests(RepoCase):
         self.assertEqual(size_check(self.state)["status"], "OK")
         assert_size_accepted(self.state)
 
-        self.commit("src/more.ts", "y\n" * 1000, "more")
+        self.commit("src/more.ts", "y\n" * 4002, "more")
         self.assertEqual(size_check(self.state)["status"], "NEEDS_DECISION")
 
-    def test_pauses_when_delta_exceeds_estimate_deviation(self):
+    def test_estimate_overrun_only_pauses_above_size_threshold(self):
         record_estimate(self.state, 100)
         self.commit("src/a.ts", "x\n" * 140, "within")
         self.assertEqual(size_check(self.state)["status"], "OK")
-        self.commit("src/b.ts", "x\n" * 20, "over")
+        self.commit("src/b.ts", "x\n" * 3860, "exactly at threshold")
+        self.commit("src/large.spec.ts", "t\n" * 5000, "tests do not count")
+        self.assertEqual(size_check(self.state)["status"], "OK")
+        assert_size_accepted(self.state)
+        self.commit("src/c.ts", "x\n", "one line over")
         result = size_check(self.state)
         self.assertEqual(result["status"], "NEEDS_DECISION")
-        self.assertIn("estimate 100", result["reasons"][0])
+        self.assertEqual(result["productLines"], 4001)
+        self.assertTrue(any("estimate 100" in reason for reason in result["reasons"]))
 
     def test_rejects_decision_without_reason(self):
         with self.assertRaises(RunBlocked):

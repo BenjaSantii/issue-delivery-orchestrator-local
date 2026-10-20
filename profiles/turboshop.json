@@ -62,7 +62,7 @@
     ]
   },
   "slicing": {
-    "maxProductLines": 800,
+    "maxProductLines": 4000,
     "estimateDeviation": 1.5,
     "maxStackDepth": 3
   },
