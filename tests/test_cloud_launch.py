@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -18,7 +19,7 @@ from issue_delivery_orchestrator.cloud_launch import (
     workspace_id_from,
 )
 from issue_delivery_orchestrator.config import settings
-from issue_delivery_orchestrator.errors import RunBlocked
+from issue_delivery_orchestrator.errors import OrchestrationError, RunBlocked
 
 
 PREFIX = "turboshop-dev-loop"
@@ -349,6 +350,44 @@ class WaitTests(unittest.TestCase):
             )
 
         self.assertIsNone(outcome)
+
+
+class TranscriptPagingTests(unittest.TestCase):
+    def test_truncated_pages_shrink_until_they_parse(self):
+        from issue_delivery_orchestrator.cloud_launch import _session_transcript
+
+        calls = []
+
+        def fake_run(arguments, **_):
+            limit = int(arguments[arguments.index("--limit") + 1])
+            offset = int(arguments[arguments.index("--offset") + 1])
+            calls.append((limit, offset))
+            result = type("Result", (), {})()
+            if limit > 10:
+                result.stdout = '{"data": [{"type": "agent"'  # cut mid-object
+            elif offset == 0:
+                result.stdout = json.dumps({"data": [{"type": "agent"}] * limit, "hasMore": True})
+            else:
+                result.stdout = json.dumps({"data": [{"type": "agent"}], "hasMore": False})
+            return result
+
+        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+            transcript = _session_transcript("conductor", "s-1")
+
+        self.assertEqual(len(transcript["data"]), 7)
+        self.assertEqual(calls[:3], [(25, 0), (12, 0), (6, 0)])
+
+    def test_unreadable_page_raises_instead_of_reading_empty(self):
+        from issue_delivery_orchestrator.cloud_launch import _session_transcript
+
+        def fake_run(arguments, **_):
+            result = type("Result", (), {})()
+            result.stdout = "not json"
+            return result
+
+        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+            with self.assertRaisesRegex(OrchestrationError, "unreadable transcript page"):
+                _session_transcript("conductor", "s-1")
 
 
 class ConductorOutputTests(unittest.TestCase):

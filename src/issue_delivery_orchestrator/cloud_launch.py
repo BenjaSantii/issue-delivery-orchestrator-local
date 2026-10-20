@@ -360,21 +360,40 @@ def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any])
     return _json_output(run(arguments, input_text=launch["message"]).stdout)
 
 
+TRANSCRIPT_PAGE_SIZE = 25
+
+
 def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
+    # The Conductor CLI truncates large JSON outputs, so pages stay small and shrink
+    # until they parse; a truncated page must never read as an empty transcript.
     items: list[Any] = []
     offset = 0
     while True:
-        page = _json_output(
-            run(
-                [cli, "session", "message", session_id, "--limit", "200",
-                 "--offset", str(offset), "--json"],
-            ).stdout
-        )
+        page = _transcript_page(cli, session_id, offset)
         batch = page.get("data") or []
         items += batch
         if not page.get("hasMore") or not batch:
             return {"data": items}
         offset += len(batch)
+
+
+def _transcript_page(cli: str, session_id: str, offset: int) -> dict[str, Any]:
+    limit = TRANSCRIPT_PAGE_SIZE
+    while True:
+        stdout = run(
+            [cli, "session", "message", session_id, "--limit", str(limit),
+             "--offset", str(offset), "--json"],
+        ).stdout
+        try:
+            page = json.loads(stdout)
+        except json.JSONDecodeError:
+            if limit == 1:
+                raise OrchestrationError(
+                    f"Conductor returned an unreadable transcript page at offset {offset}"
+                )
+            limit = max(1, limit // 2)
+            continue
+        return page if isinstance(page, dict) else {"data": page}
 
 
 def _assistant_texts(payload: Any) -> list[str]:
