@@ -322,8 +322,11 @@ python3 scripts/issue-delivery LOG-123 --base test cloud-launch --toolbox-profil
 ```
 
 The first command checks the issue (approved `Spec ID` and `Ticket ID` blocks, state, open
-blockers, stack parent) and prints the Conductor command and first message without creating
-anything. `--confirm` creates the workspace. Only `CODEX_TOOLBOX_PROFILE`,
+blockers, stack parent) and prints the plan without creating anything. `--confirm` creates the
+workspace with a bootstrap session that waits for setup, installs or checks the toolbox and replies
+`IDO-BOOTSTRAP READY`. The launcher polls that transcript and then starts a separate delivery
+session, because plugins only load when an agent process starts. After a timeout, resume with
+`cloud-launch --confirm --workspace <id>`. Only `CODEX_TOOLBOX_PROFILE`,
 `LINEAR_EXPECTED_EMAIL`, and `GITHUB_EXPECTED_LOGIN` are passed; configure `LINEAR_API_KEY` as a
 Conductor project environment variable, because the VM has no macOS Keychain.
 `ISSUE_DELIVERY_TOOLBOX_PROFILE` can replace `--toolbox-profile`.

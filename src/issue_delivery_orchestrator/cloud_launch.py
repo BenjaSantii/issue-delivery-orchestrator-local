@@ -4,8 +4,9 @@ import json
 import os
 import re
 import shutil
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config import Settings
 from .errors import OrchestrationError, RunBlocked
@@ -16,6 +17,9 @@ from .util import run
 CONDUCTOR_APP_CLI = Path("/Applications/Conductor.app/Contents/Resources/bin/conductor")
 CLOSED_STATES = {"completed", "canceled"}
 AGENTS = ("claude", "codex")
+PLUGIN_ID = "issue-delivery-orchestrator-local"
+MINIMUM_PLUGIN_VERSION = "0.11.0"
+BOOTSTRAP_MARKER = re.compile(r"(?m)^\s*`?IDO-BOOTSTRAP (READY|FAILED)(?::\s*(.*?))?`?\s*$")
 
 READINESS_QUERY = """
 query CloudLaunchReadiness($id: String!) {
@@ -132,12 +136,7 @@ def build_launch(
     if not _remote_branch_exists(repository, workspace_base):
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
 
-    message = launch_message(
-        readiness,
-        base=base,
-        stack_parent=stack_parent,
-        toolbox_profile=toolbox_profile,
-    )
+    message = launch_message(readiness, base=base, stack_parent=stack_parent)
     name = f"[{readiness['identifier']}] {readiness['title']}"
     arguments = [
         "workspace",
@@ -168,7 +167,10 @@ def build_launch(
     ]
     return {
         "arguments": arguments,
+        "bootstrapMessage": bootstrap_message(agent, toolbox_profile),
         "message": message,
+        "agent": agent,
+        "model": model,
         "workspaceBase": workspace_base,
         "behindTarget": _commits_behind(
             repository,
@@ -178,12 +180,33 @@ def build_launch(
     }
 
 
+def bootstrap_message(agent: str, toolbox_profile: str) -> str:
+    # Plugins load when the agent process starts, so the delivery session must start
+    # after the toolbox is installed. This first session only prepares the workspace.
+    plugin_list = f"{agent} plugin list" + (" --json" if agent == "claude" else "")
+    return (
+        "Prepara este workspace de Conductor Cloud para Issue Delivery Orchestrator. En esta "
+        "sesión no trabajes ninguna issue: sólo prepara el entorno y responde.\n\n"
+        "1. Si el setup del workspace sigue corriendo (`pgrep -f setup-workspace.sh`), espera a "
+        "que termine revisando cada 15 segundos, hasta 20 minutos.\n"
+        f"2. Ejecuta `{plugin_list}` y confirma que `{PLUGIN_ID}` esté habilitado con versión "
+        f"{MINIMUM_PLUGIN_VERSION} o mayor. Si falta o es menor, ejecuta desde la raíz del repo "
+        f"`CODEX_TOOLBOX_PROFILE={toolbox_profile} pnpm conductor:toolbox` y vuelve a "
+        "comprobarlo.\n"
+        "3. Comprueba, sin imprimir sus valores, que existan `LINEAR_API_KEY`, "
+        "`LINEAR_EXPECTED_EMAIL` y `GITHUB_EXPECTED_LOGIN` (`test -n \"$VAR\"`).\n"
+        "4. Termina tu respuesta con una sola línea final, exactamente una de estas:\n"
+        "IDO-BOOTSTRAP READY\n"
+        "IDO-BOOTSTRAP FAILED: <causa concreta>\n\n"
+        "Otra sesión de este workspace continuará con la entrega cuando respondas READY.\n"
+    )
+
+
 def launch_message(
     readiness: dict[str, Any],
     *,
     base: str,
     stack_parent: str | None,
-    toolbox_profile: str,
 ) -> str:
     identifier = readiness["identifier"]
     command = f"`--mode conductor --base {base}`"
@@ -193,12 +216,9 @@ def launch_message(
     return (
         f"Entrega {identifier} ({readiness['title']}) con Issue Delivery Orchestrator en "
         "Conductor Cloud.\n\n"
-        "1. Comprueba que el plugin `issue-delivery-orchestrator-local` esté instalado y "
-        "habilitado (`claude plugin list` o `codex plugin list`). Si no lo está, ejecuta desde "
-        f"la raíz del repo `CODEX_TOOLBOX_PROFILE={toolbox_profile} pnpm conductor:toolbox`. Si "
-        "se instaló durante esta sesión, sus skills no están cargadas: lee los `SKILL.md` "
-        "directamente desde el directorio instalado y úsalo como `<plugin-root>`. Después "
-        "prepara el workspace siguiendo "
+        "1. Una sesión anterior de este workspace ya instaló y verificó el plugin "
+        f"`{PLUGIN_ID}`. Si aun así sus skills no aparecen en esta sesión, detente y dilo: no "
+        "las sustituyas leyendo archivos a mano. Prepara el workspace siguiendo "
         "`<plugin-root>/skills/issue-delivery-orchestrator/references/conductor-cloud.md`.\n"
         "2. Inicia el orquestador (Claude Code: "
         "`/issue-delivery-orchestrator-local:issue-delivery-orchestrator`; Codex: "
@@ -248,11 +268,151 @@ def conductor_project_id(cli: str, repository: Path) -> str:
 
 
 def create_workspace(cli: str, launch: dict[str, Any]) -> dict[str, Any]:
-    result = run([cli, *launch["arguments"]], input_text=launch["message"])
+    result = run([cli, *launch["arguments"]], input_text=launch["bootstrapMessage"])
+    return _json_output(result.stdout)
+
+
+DELIVERY_SESSION_NAME = "Entrega"
+
+
+def workspace_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
+    return _json_output(
+        run([cli, "workspace", "session", workspace_id, "--json"]).stdout
+    ).get("data") or []
+
+
+def first_session_id(cli: str, workspace_id: str, created: dict[str, Any] | None = None) -> str:
+    for value in _find_values(created or {}, ("sessionId",)):
+        return value
+    sessions = workspace_sessions(cli, workspace_id)
+    if not sessions:
+        raise RunBlocked(f"Conductor workspace {workspace_id} has no session yet")
+    return str(sessions[0]["id"])
+
+
+def workspace_id_from(created: dict[str, Any]) -> str:
+    candidates = (
+        created.get("workspaceId"),
+        (created.get("workspace") or {}).get("id"),
+        (created.get("data") or {}).get("id") if isinstance(created.get("data"), dict) else None,
+        created.get("id"),
+    )
+    for value in candidates:
+        if isinstance(value, str) and value:
+            return value
+    raise RunBlocked(f"Could not read the workspace ID from Conductor output: {created}")
+
+
+def bootstrap_outcome(transcript: dict[str, Any]) -> tuple[str, str] | None:
+    """Return the agent's bootstrap verdict, reading only assistant prose.
+
+    User messages and tool calls are ignored so the marker quoted in the prompt or
+    echoed by a command never counts as the agent's answer.
+    """
+    outcome = None
+    for item in transcript.get("data") or []:
+        if item.get("type") != "agent":
+            continue
+        for text in _assistant_texts(((item.get("content") or {}).get("rawPayload")) or {}):
+            for match in BOOTSTRAP_MARKER.finditer(text):
+                outcome = (match.group(1), (match.group(2) or "").strip())
+    return outcome
+
+
+def wait_for_bootstrap(
+    cli: str,
+    session_id: str,
+    *,
+    timeout_seconds: float,
+    poll_seconds: float = 20,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> tuple[str, str] | None:
+    deadline = clock() + timeout_seconds
+    while True:
+        outcome = bootstrap_outcome(_session_transcript(cli, session_id))
+        if outcome or clock() >= deadline:
+            return outcome
+        sleep(poll_seconds)
+
+
+def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any]) -> dict[str, Any]:
+    # A resumed launch must not start a second delivery agent on the same workspace.
+    for session in workspace_sessions(cli, workspace_id):
+        if session.get("name") == DELIVERY_SESSION_NAME:
+            return {**session, "reused": True}
+    arguments = [
+        cli,
+        "session",
+        "create",
+        "--workspace",
+        workspace_id,
+        "--agent",
+        launch["agent"],
+        "--name",
+        DELIVERY_SESSION_NAME,
+    ]
+    if launch.get("model"):
+        arguments += ["--model", launch["model"]]
+    arguments += ["--message-file", "-", "--json"]
+    return _json_output(run(arguments, input_text=launch["message"]).stdout)
+
+
+def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
+    items: list[Any] = []
+    offset = 0
+    while True:
+        page = _json_output(
+            run(
+                [cli, "session", "message", session_id, "--limit", "200",
+                 "--offset", str(offset), "--json"],
+            ).stdout
+        )
+        batch = page.get("data") or []
+        items += batch
+        if not page.get("hasMore") or not batch:
+            return {"data": items}
+        offset += len(batch)
+
+
+def _assistant_texts(payload: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(payload, dict):
+        if payload.get("type") in {"tool_use", "tool_result", "user"}:
+            return texts
+        if payload.get("type") == "result" and isinstance(payload.get("result"), str):
+            texts.append(payload["result"])
+        if payload.get("type") == "text" and isinstance(payload.get("text"), str):
+            texts.append(payload["text"])
+        for key, value in payload.items():
+            if key not in {"text", "result"}:
+                texts += _assistant_texts(value)
+    elif isinstance(payload, list):
+        for value in payload:
+            texts += _assistant_texts(value)
+    return texts
+
+
+def _find_values(payload: Any, keys: tuple[str, ...]) -> list[str]:
+    found: list[str] = []
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in keys and isinstance(value, str) and value:
+                found.append(value)
+            else:
+                found += _find_values(value, keys)
+    elif isinstance(payload, list):
+        for value in payload:
+            found += _find_values(value, keys)
+    return found
+
+
+def _json_output(stdout: str) -> dict[str, Any]:
     try:
-        return json.loads(result.stdout)
+        value = json.loads(stdout)
     except json.JSONDecodeError:
-        return {"output": result.stdout.strip()}
+        return {"output": stdout.strip()}
+    return value if isinstance(value, dict) else {"data": value}
 
 
 def _block(description: str, marker_prefix: str, block: str) -> str | None:

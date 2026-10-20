@@ -9,11 +9,11 @@ Docker, así que el reviewer fijo es `playwright` (Chromium headless dentro de l
 Ejecutar en orden desde la raíz del checkout y bloquear con la causa concreta ante el primer fallo.
 No imprimir valores de secretos; comprobar sólo su presencia.
 
-1. **Plugin.** Confirmar que `issue-delivery-orchestrator-local` esté instalado y habilitado
-   (`claude plugin list` o `codex plugin list`). Si falta, ejecutar
-   `CODEX_TOOLBOX_PROFILE=<perfil> pnpm conductor:toolbox` con el perfil indicado en el mensaje
-   inicial. Si lo instalaste en esta sesión, sus skills no están cargadas: leer los `SKILL.md`
-   desde el directorio instalado y usarlo como `<plugin-root>`.
+1. **Plugin.** Los plugins se cargan al arrancar el proceso del agente. Por eso
+   `issue-delivery-cloud-launch` usa dos sesiones: una de preparación que instala o verifica el
+   toolbox y responde `IDO-BOOTSTRAP READY`, y después la sesión de entrega, que ya arranca con
+   las skills cargadas. Si en la sesión de entrega las skills de este plugin no aparecen, detenerse
+   y decirlo; no sustituirlas leyendo archivos a mano.
 2. **Identidad y credenciales.** Exigir `LINEAR_API_KEY`, `LINEAR_EXPECTED_EMAIL` y
    `GITHUB_EXPECTED_LOGIN` en el entorno (`test -n "$LINEAR_API_KEY"`). La key vive en las
    variables de entorno del proyecto en Conductor; si falta, pedir al usuario que la configure ahí y

@@ -37,9 +37,19 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 3. Mostrar al usuario, por issue: spec y tickets detectados, base o stack, agente y el mensaje
    inicial. Pedir confirmación explícita: cada workspace cloud consume recursos y arranca un
    agente que trabajará la issue hasta abrir su PR.
-4. Con la confirmación, repetir el comando con `--confirm` y entregar el enlace (`deepLink`) o el ID
-   que devuelve Conductor para cada workspace.
-5. Para seguir un workspace: `conductor workspace status <id>` y
+4. Con la confirmación, repetir el comando con `--confirm`. El comando:
+   1. crea el workspace con una **sesión de preparación** que espera el setup, verifica (o
+      instala con `pnpm conductor:toolbox`) el plugin 0.11.0 o mayor y las credenciales, y
+      responde `IDO-BOOTSTRAP READY` o `IDO-BOOTSTRAP FAILED: <causa>`;
+   2. lee esa sesión desde aquí hasta encontrar la respuesta (`--wait-minutes`, 25 por defecto);
+   3. con `READY`, crea en el mismo workspace la sesión **Entrega** con el mensaje del
+      orquestador. Al ser un proceso nuevo del agente, arranca con las skills del toolbox ya
+      cargadas; no hace falta abrir otro chat a mano.
+   Lanzar varias issues en secuencia: cada comando espera su propia preparación.
+5. Entregar `workspaceId` y la sesión de entrega. Ante `FAILED`, mostrar la causa; ante timeout,
+   el comando imprime cómo reanudar: `cloud-launch --confirm --workspace <id>`, que retoma la
+   espera y nunca crea una segunda sesión Entrega.
+6. Para seguir un workspace: `conductor workspace status <id>` y
    `conductor workspace session <id>`; no enviar mensajes a sus sesiones sin que el usuario lo pida.
 
 ## Qué recibe el workspace
@@ -47,10 +57,9 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 - `--branch <base o rama del padre>`, `--agent`, `--name "[ID] título"`.
 - Entorno: `CODEX_TOOLBOX_PROFILE`, `LINEAR_EXPECTED_EMAIL`, `GITHUB_EXPECTED_LOGIN`. El setup del
   repositorio (`pnpm conductor:setup`) instala el toolbox con ellos.
-- Un primer mensaje que verifica el plugin (o lo instala con `pnpm conductor:toolbox`), prepara la
-  VM según
-  [conductor-cloud.md](../issue-delivery-orchestrator/references/conductor-cloud.md) e inicia el
-  orquestador con `--mode conductor`, indicando que el spec y los tickets ya fueron aprobados.
+- La sesión de preparación descrita arriba y, tras su `READY`, la sesión Entrega, que prepara la VM
+  según [conductor-cloud.md](../issue-delivery-orchestrator/references/conductor-cloud.md) e inicia
+  el orquestador con `--mode conductor`, indicando que el spec y los tickets ya fueron aprobados.
 
 No lanzar issues sin spec y tickets aprobados: para esas, el siguiente paso es el Grill
 (`issue-delivery-grill`) en una sesión interactiva.

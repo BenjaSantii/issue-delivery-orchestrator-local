@@ -7,10 +7,15 @@ from unittest.mock import patch
 
 from issue_delivery_orchestrator.cloud_launch import (
     _normalize_remote,
+    bootstrap_message,
+    bootstrap_outcome,
     build_launch,
+    create_delivery_session,
     delivery_readiness,
     launch_message,
     stack_parent_for,
+    wait_for_bootstrap,
+    workspace_id_from,
 )
 from issue_delivery_orchestrator.config import settings
 from issue_delivery_orchestrator.errors import RunBlocked
@@ -197,6 +202,8 @@ class BuildLaunchTests(unittest.TestCase):
         self.assertFalse(any("lin_api" in item for item in arguments))
         self.assertEqual(arguments[arguments.index("--branch") + 1], "test")
         self.assertEqual(launch["behindTarget"], 0)
+        self.assertIn("IDO-BOOTSTRAP READY", launch["bootstrapMessage"])
+        self.assertIn("--mode conductor", launch["message"])
 
     def test_model_is_passed_before_environment(self):
         arguments = self.launch(self.configuration(), model="opus-5-5-1m")["arguments"]
@@ -219,25 +226,162 @@ class BuildLaunchTests(unittest.TestCase):
 
 
 class MessageTests(unittest.TestCase):
-    def test_message_names_mode_approvals_and_reviewers(self):
+    def test_delivery_message_names_mode_approvals_and_reviewers(self):
         readiness = delivery_readiness(FakeLinear(issue()), "TS-1", PREFIX)
-        message = launch_message(
-            readiness, base="test", stack_parent=None, toolbox_profile="benjasanti"
-        )
+        message = launch_message(readiness, base="test", stack_parent=None)
 
         self.assertIn("--mode conductor --base test", message)
         self.assertIn("SPEC-TS-1", message)
         self.assertIn("TICKET-001, TICKET-002", message)
-        self.assertIn("CODEX_TOOLBOX_PROFILE=benjasanti pnpm conductor:toolbox", message)
         self.assertIn("mobile-web-reviewer", message)
+        self.assertIn("no las sustituyas leyendo archivos a mano", message)
 
     def test_stacked_message_uses_stack_parent(self):
         readiness = delivery_readiness(FakeLinear(issue()), "TS-1", PREFIX)
-        message = launch_message(
-            readiness, base="test", stack_parent="benjamin/ts-2", toolbox_profile="p"
-        )
+        message = launch_message(readiness, base="test", stack_parent="benjamin/ts-2")
 
         self.assertIn("--mode conductor --stack-parent benjamin/ts-2", message)
+
+    def test_bootstrap_message_installs_toolbox_and_asks_for_marker(self):
+        message = bootstrap_message("claude", "benjasanti")
+
+        self.assertIn("claude plugin list --json", message)
+        self.assertIn("CODEX_TOOLBOX_PROFILE=benjasanti pnpm conductor:toolbox", message)
+        self.assertIn("0.11.0", message)
+        self.assertIn("IDO-BOOTSTRAP READY", message)
+        self.assertIn("no trabajes ninguna issue", message)
+
+
+def agent_event(*blocks, kind="assistant"):
+    payload = {"type": kind, "message": {"role": "assistant", "content": list(blocks)}}
+    return {"type": "agent", "content": {"type": "agent", "rawPayload": payload}}
+
+
+def text(value):
+    return {"type": "text", "text": value}
+
+
+class BootstrapOutcomeTests(unittest.TestCase):
+    def test_reads_ready_from_assistant_text(self):
+        transcript = {"data": [agent_event(text("Plugin 0.11.0 listo.\n\nIDO-BOOTSTRAP READY"))]}
+
+        self.assertEqual(bootstrap_outcome(transcript), ("READY", ""))
+
+    def test_reads_failure_cause(self):
+        transcript = {
+            "data": [agent_event(text("IDO-BOOTSTRAP FAILED: LINEAR_API_KEY no está definida"))]
+        }
+
+        self.assertEqual(
+            bootstrap_outcome(transcript),
+            ("FAILED", "LINEAR_API_KEY no está definida"),
+        )
+
+    def test_ignores_the_prompt_and_tool_calls(self):
+        prompt = {
+            "type": "userMessage",
+            "content": {"type": "userMessage", "message": "IDO-BOOTSTRAP READY"},
+        }
+        tool = agent_event(
+            {"type": "tool_use", "name": "Bash", "input": {"command": "echo 'IDO-BOOTSTRAP READY'"}}
+        )
+        tool_output = agent_event(
+            {"type": "tool_result", "content": "IDO-BOOTSTRAP READY"}, kind="user"
+        )
+
+        self.assertIsNone(bootstrap_outcome({"data": [prompt, tool, tool_output]}))
+
+    def test_marker_must_be_its_own_line(self):
+        transcript = {
+            "data": [agent_event(text("Cuando termine diré IDO-BOOTSTRAP READY al final."))]
+        }
+
+        self.assertIsNone(bootstrap_outcome(transcript))
+
+    def test_last_verdict_wins(self):
+        transcript = {
+            "data": [
+                agent_event(text("IDO-BOOTSTRAP FAILED: falta el plugin")),
+                agent_event(text("Lo instalé.\nIDO-BOOTSTRAP READY")),
+            ]
+        }
+
+        self.assertEqual(bootstrap_outcome(transcript)[0], "READY")
+
+
+class WaitTests(unittest.TestCase):
+    def test_polls_until_ready(self):
+        pages = [
+            {"data": []},
+            {"data": [agent_event(text("Esperando el setup..."))]},
+            {"data": [agent_event(text("IDO-BOOTSTRAP READY"))]},
+        ]
+        sleeps = []
+        with patch(
+            "issue_delivery_orchestrator.cloud_launch._session_transcript",
+            side_effect=pages,
+        ):
+            outcome = wait_for_bootstrap(
+                "conductor", "s-1", timeout_seconds=600, sleep=sleeps.append, clock=lambda: 0
+            )
+
+        self.assertEqual(outcome, ("READY", ""))
+        self.assertEqual(len(sleeps), 2)
+
+    def test_gives_up_after_timeout(self):
+        now = iter([0, 100, 200, 700])
+        with patch(
+            "issue_delivery_orchestrator.cloud_launch._session_transcript",
+            return_value={"data": []},
+        ):
+            outcome = wait_for_bootstrap(
+                "conductor",
+                "s-1",
+                timeout_seconds=600,
+                sleep=lambda _: None,
+                clock=lambda: next(now),
+            )
+
+        self.assertIsNone(outcome)
+
+
+class ConductorOutputTests(unittest.TestCase):
+    def test_workspace_id_prefers_explicit_keys(self):
+        self.assertEqual(
+            workspace_id_from({"id": "ws-1", "session": {"id": "s-1"}}),
+            "ws-1",
+        )
+        self.assertEqual(workspace_id_from({"workspaceId": "ws-2", "id": "x"}), "ws-2")
+
+    def test_delivery_session_is_not_duplicated_on_resume(self):
+        existing = [{"id": "s-1", "name": "Bootstrap"}, {"id": "s-2", "name": "Entrega"}]
+        with patch(
+            "issue_delivery_orchestrator.cloud_launch.workspace_sessions",
+            return_value=existing,
+        ), patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            session = create_delivery_session(
+                "conductor", "ws-1", {"agent": "claude", "model": None, "message": "m"}
+            )
+
+        self.assertEqual(session["id"], "s-2")
+        self.assertTrue(session["reused"])
+        runner.assert_not_called()
+
+    def test_delivery_session_sends_message_on_stdin(self):
+        with patch(
+            "issue_delivery_orchestrator.cloud_launch.workspace_sessions",
+            return_value=[{"id": "s-1", "name": "Bootstrap"}],
+        ), patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = '{"id": "s-3"}'
+            session = create_delivery_session(
+                "conductor", "ws-1", {"agent": "claude", "model": "opus", "message": "entrega"}
+            )
+
+        arguments = runner.call_args.args[0]
+        self.assertEqual(arguments[1:5], ["session", "create", "--workspace", "ws-1"])
+        self.assertIn("--model", arguments)
+        self.assertEqual(runner.call_args.kwargs["input_text"], "entrega")
+        self.assertEqual(session["id"], "s-3")
 
 
 class RemoteTests(unittest.TestCase):

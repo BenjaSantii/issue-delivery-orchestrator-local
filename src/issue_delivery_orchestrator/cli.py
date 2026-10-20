@@ -14,9 +14,13 @@ from .cloud_launch import (
     build_launch,
     conductor_cli,
     conductor_project_id,
+    create_delivery_session,
     create_workspace,
     delivery_readiness,
+    first_session_id,
     stack_parent_for,
+    wait_for_bootstrap,
+    workspace_id_from,
 )
 from .config import DEFAULT_CONFIG_HOME, Settings, settings
 from .credentials import CredentialProvider
@@ -137,6 +141,16 @@ def parser() -> argparse.ArgumentParser:
         "--confirm",
         action="store_true",
         help="Create the workspace; without it the command only prints the plan",
+    )
+    cloud.add_argument(
+        "--workspace",
+        help="Resume a launch: wait for this workspace's bootstrap and start delivery",
+    )
+    cloud.add_argument(
+        "--wait-minutes",
+        type=float,
+        default=25,
+        help="How long to wait for the bootstrap session before giving up",
     )
 
     reviewer = actions.add_parser(
@@ -480,6 +494,7 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
         "stackParent": stack_parent,
         "conductor": cli,
         "command": [cli, *launch["arguments"]],
+        "bootstrapMessage": launch["bootstrapMessage"],
         "message": launch["message"],
         "workspaceBase": launch["workspaceBase"],
         "workspaceBaseBehindPrTarget": launch["behindTarget"],
@@ -487,7 +502,43 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
     }
     if not args.confirm:
         return plan
-    return {**plan, "created": True, "workspace": create_workspace(cli, launch)}
+
+    # Plugins load when an agent process starts. The first session installs and checks
+    # the toolbox; delivery runs in a second session started after it reports READY.
+    created = None
+    if args.workspace:
+        workspace_id = args.workspace
+    else:
+        created = create_workspace(cli, launch)
+        workspace_id = workspace_id_from(created)
+    bootstrap_session = first_session_id(cli, workspace_id, created)
+    outcome = wait_for_bootstrap(
+        cli,
+        bootstrap_session,
+        timeout_seconds=args.wait_minutes * 60,
+    )
+    resume = (
+        f"Resume with: issue-delivery {readiness['identifier']} cloud-launch "
+        f"--confirm --workspace {workspace_id}"
+    )
+    if outcome is None:
+        raise RunBlocked(
+            f"Workspace {workspace_id} did not finish its bootstrap within "
+            f"{args.wait_minutes:g} minutes. {resume}"
+        )
+    if outcome[0] == "FAILED":
+        raise RunBlocked(
+            f"Workspace {workspace_id} bootstrap failed: {outcome[1] or 'no cause given'}. "
+            f"Fix it in that workspace, then: {resume}"
+        )
+    delivery = create_delivery_session(cli, workspace_id, launch)
+    return {
+        **plan,
+        "created": True,
+        "workspaceId": workspace_id,
+        "bootstrapSessionId": bootstrap_session,
+        "deliverySession": delivery,
+    }
 
 
 def bootstrap(
