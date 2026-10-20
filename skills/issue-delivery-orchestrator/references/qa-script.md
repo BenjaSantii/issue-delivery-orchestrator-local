@@ -7,6 +7,11 @@ publicar el spec y exige sus resultados antes de cerrar la revisión manual.
 Un spec aprobado antes de existir esta sección sigue el flujo anterior: no se le exige guion ni
 resultados.
 
+El guion define lo que se ejecuta, no cuántos tests se añaden a la PR. Aplicar
+[retained-tests.md](../../test/references/retained-tests.md): mantener la QA completa y conservar
+sólo las pruebas permanentes con una señal de regresión distinta. Los scripts y las capturas
+temporales permanecen en el run ignorado; los tests de carrera exigidos sí se commitean.
+
 ## Formato
 
 ```md

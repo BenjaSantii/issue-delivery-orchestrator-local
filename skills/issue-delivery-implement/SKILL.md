@@ -20,6 +20,9 @@ Implementar una unidad de trabajo a la vez. Exigir como entrada el spec vigente,
 - Respetar la arquitectura y política de auditoría del backend dueño.
 - Mantener interfaces pequeñas y cambios localizados.
 - Inspeccionar cobertura existente antes de añadir tests; extender un seam estable para comportamiento o riesgo distinto.
+- Aplicar [pruebas que se conservan en la PR](../test/references/retained-tests.md) al escribir
+  tests y antes del commit: conservar cada riesgo en su capa dueña y dejar los scripts de QA
+  temporales bajo el run ignorado, sin duplicar la matriz interna en las pantallas.
 - No editar migraciones comprometidas; generarlas con el script del proyecto dueño.
 - Mantener llamadas externas fuera de transacciones.
 - No alterar archivos ajenos al ticket, salvo que sean indispensables para la causa raíz.

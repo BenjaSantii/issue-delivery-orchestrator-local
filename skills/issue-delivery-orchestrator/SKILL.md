@@ -327,9 +327,13 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
 0. **Tamaño.** Ejecutar `size-check`. Con `NEEDS_DECISION` sin decisión registrada, preguntar al
    usuario y dividir o registrar `size-decision` antes de seguir; `ensure-pr` rechaza una PR nueva
    en ese estado.
-1. **Paridad con CI.** Invocar `test` en modo paridad con CI sobre el delta completo contra
-   `origin/<prTarget>`. Reparar todo `branch-caused` con `issue-delivery-implement` antes de
-   seguir. Nunca pushear una branch que ya se sabe roja en lint, typecheck, tests o chequeos de
+1. **Paridad con CI.** Antes de invocar `test`, revisar el delta de tests según
+   [retained-tests.md](../test/references/retained-tests.md); delegar el recorte de duplicados
+   nuevos a Implement y conservar los casos del QA Script. No usar el Refactor de producto
+   para ampliar o reducir cobertura. Invocar `test` en modo paridad con CI sobre el delta completo
+   del candidato final contra `origin/<prTarget>`. Reparar todo `branch-caused` con
+   `issue-delivery-implement` antes de seguir. Nunca pushear una branch que ya se sabe roja en
+   lint, typecheck, tests o chequeos de
    contrato/migraciones.
 2. **Review previa a la PR.** Pedir permiso para una ejecución de `local-reviewer` sobre la branch,
    indicando SHA, alcance y provider/modo. Ejecutarla sólo con autorización vigente, según

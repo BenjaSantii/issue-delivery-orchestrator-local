@@ -30,6 +30,10 @@ permanece igual.
 
 ## Elegir el alcance
 
+Para distinguir las pruebas permanentes de la validación temporal de QA, aplicar
+[retained-tests.md](references/retained-tests.md). Revisar duplicación entre capas en el delta
+de tests; informar el recorte al implementador sin modificar archivos desde esta skill.
+
 1. Calcular el delta desde el SHA inicial o base indicada, incluyendo cambios sin
    commit.
 2. Identificar los proyectos afectados y sus targets existentes. En Nx, usar los

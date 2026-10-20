@@ -108,6 +108,11 @@ Inventory existing evidence before proposing new tests. Map every material risk 
 
 Choose the lowest sufficient seam. Use E2E only for a unique browser or assembled-system risk. Name the marginal failure signal for every new test and identify any superseded test.
 
+Apply [retained-tests.md](../test/references/retained-tests.md): distinguish committed regression
+tests in `Testing Decisions` from temporary execution evidence in `QA Script`. A QA case does
+not require its own permanent test; keep one owner per invariant and justify any additional
+integration signal instead of repeating the same internal scenarios across layers.
+
 For UI changes, identify the affected user flows and expected visible result so Issue Delivery
 Orchestrator can perform final computer-use validation and publish current screenshots. Do not turn
 this fixed closure phase into a separate implementation ticket.
