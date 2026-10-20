@@ -473,3 +473,75 @@ def _normalize_remote(remote: str) -> str:
     value = re.sub(r"^git@([^:]+):", r"https://\1/", value)
     value = re.sub(r"^ssh://git@", "https://", value)
     return value.removesuffix(".git").rstrip("/")
+
+
+RESUME_AGENT = "claude"
+RESUME_MODEL = "opus-5-5-1m"
+
+
+def resume_message(identifier: str) -> str:
+    return (
+        f"Reanuda la entrega de {identifier} con Issue Delivery Orchestrator. Una sesión anterior "
+        "de este workspace se detuvo (por ejemplo por límite de uso) y no tienes su conversación.\n\n"
+        "1. Comprueba que el plugin `issue-delivery-orchestrator-local` esté cargado en esta "
+        "sesión; si no aparece, detente y dilo.\n"
+        "2. Inicia el orquestador (Claude Code: "
+        "`/issue-delivery-orchestrator-local:issue-delivery-orchestrator`; Codex: "
+        f"`$issue-delivery-orchestrator`) para {identifier} con `--worktree` igual a la raíz de este "
+        "checkout. Es un run existente: **no uses `--new-run`**. El motor devuelve "
+        "`resumed: true`, la fase actual y `nextAction`; si el run quedó `blocked`, usa la acción "
+        "`resume` del motor.\n"
+        "3. Antes de seguir, revisa `git status` y `git log` contra el estado del run: cambios sin "
+        "commit pueden ser trabajo a medias de la sesión anterior. Consérvalos y reconcílialos con "
+        "el ticket en curso; no los descartes sin decírmelo.\n"
+        "4. Relee el spec, los tickets y la issue en Linear con `read-linear-issue` y continúa desde "
+        "`nextAction`. Los permisos que di en la sesión anterior (por ejemplo LocalReviewer) no se "
+        "heredan: pídelos de nuevo cuando corresponda.\n"
+    )
+
+
+def find_issue_workspace(cli: str, identifier: str) -> dict[str, Any]:
+    listing = _json_output(
+        run([cli, "workspace", "list", "--mine", "--name", f"[{identifier}]",
+             "--limit", "20", "--json"]).stdout
+    )
+    matches = [
+        item for item in (listing.get("data") or [])
+        if str(item.get("name") or "").startswith(f"[{identifier}]") and not item.get("archivedAt")
+    ]
+    if len(matches) != 1:
+        raise RunBlocked(
+            f"Expected one active Conductor workspace named [{identifier}], found "
+            f"{len(matches)}. Pass --workspace."
+        )
+    return matches[0]
+
+
+def working_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
+    busy = []
+    for session in workspace_sessions(cli, workspace_id):
+        status = _json_output(
+            run([cli, "session", "status", str(session["id"]), "--json"]).stdout
+        ).get("status")
+        if status == "working":
+            busy.append({"id": session["id"], "name": session.get("name")})
+    return busy
+
+
+def create_resume_session(
+    cli: str,
+    workspace_id: str,
+    message: str,
+    *,
+    agent: str,
+    model: str | None,
+) -> dict[str, Any]:
+    existing = workspace_sessions(cli, workspace_id)
+    count = sum(1 for item in existing if str(item.get("name") or "").startswith("Reanudación"))
+    arguments = [cli, "session", "create", "--workspace", workspace_id, "--agent", agent,
+                 "--name", f"Reanudación {count + 1}"]
+    if model:
+        arguments += ["--model", model]
+    arguments += ["--message-file", "-", "--json"]
+    return _json_output(run(arguments, input_text=message).stdout)
+
