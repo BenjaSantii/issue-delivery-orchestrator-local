@@ -248,7 +248,7 @@ class MessageTests(unittest.TestCase):
 
         self.assertIn("claude plugin list --json", message)
         self.assertIn("CODEX_TOOLBOX_PROFILE=benjasanti pnpm conductor:toolbox", message)
-        self.assertIn("0.11.0", message)
+        self.assertIn("0.12.0", message)
         self.assertIn("IDO-BOOTSTRAP READY", message)
         self.assertIn("no trabajes ninguna issue", message)
 
@@ -399,18 +399,19 @@ class ConductorOutputTests(unittest.TestCase):
         self.assertEqual(workspace_id_from({"workspaceId": "ws-2", "id": "x"}), "ws-2")
 
     def test_delivery_session_is_not_duplicated_on_resume(self):
-        existing = [{"id": "s-1", "name": "Bootstrap"}, {"id": "s-2", "name": "Entrega"}]
-        with patch(
-            "issue_delivery_orchestrator.cloud_launch.workspace_sessions",
-            return_value=existing,
-        ), patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
-            session = create_delivery_session(
-                "conductor", "ws-1", {"agent": "claude", "model": None, "message": "m"}
-            )
-
-        self.assertEqual(session["id"], "s-2")
-        self.assertTrue(session["reused"])
-        runner.assert_not_called()
+        for name in ("Generador", "Entrega"):
+            with self.subTest(name=name):
+                existing = [{"id": "s-1", "name": "Bootstrap"}, {"id": "s-2", "name": name}]
+                with patch(
+                    "issue_delivery_orchestrator.cloud_launch.workspace_sessions",
+                    return_value=existing,
+                ), patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+                    session = create_delivery_session(
+                        "conductor", "ws-1", {"agent": "claude", "model": None, "message": "m"}
+                    )
+                self.assertEqual(session["id"], "s-2")
+                self.assertTrue(session["reused"])
+                runner.assert_not_called()
 
     def test_delivery_session_sends_message_on_stdin(self):
         with patch(
@@ -425,6 +426,7 @@ class ConductorOutputTests(unittest.TestCase):
         arguments = runner.call_args.args[0]
         self.assertEqual(arguments[1:5], ["session", "create", "--workspace", "ws-1"])
         self.assertIn("--model", arguments)
+        self.assertEqual(arguments[arguments.index("--name") + 1], "Generador")
         self.assertEqual(runner.call_args.kwargs["input_text"], "entrega")
         self.assertEqual(session["id"], "s-3")
 

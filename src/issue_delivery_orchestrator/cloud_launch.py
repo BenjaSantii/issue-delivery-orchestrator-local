@@ -18,7 +18,7 @@ CONDUCTOR_APP_CLI = Path("/Applications/Conductor.app/Contents/Resources/bin/con
 CLOSED_STATES = {"completed", "canceled"}
 AGENTS = ("claude", "codex")
 PLUGIN_ID = "issue-delivery-orchestrator-local"
-MINIMUM_PLUGIN_VERSION = "0.11.0"
+MINIMUM_PLUGIN_VERSION = "0.12.0"
 BOOTSTRAP_MARKER = re.compile(r"(?m)^\s*`?IDO-BOOTSTRAP (READY|FAILED)(?::\s*(.*?))?`?\s*$")
 
 READINESS_QUERY = """
@@ -232,8 +232,9 @@ def launch_message(
         "Grill. Si la reconciliación cambia el alcance, pide aprobación antes de seguir.\n"
         "4. Verifica las historias UI con `issue-delivery-playwright-review` y las de teléfono "
         "con el agente `mobile-web-reviewer`.\n"
-        "5. Pausa sólo ante tickets HITL, decisiones de tamaño, permisos explícitos como "
-        "LocalReviewer o un bloqueo; explica la acción mínima que necesitas.\n"
+        "5. En Conductor no ejecutes ni esperes LocalReviewer: no es requisito previo a la PR. "
+        "Mantén QA web, paridad CI y convergencia de reviews de GitHub. Pausa sólo ante tickets "
+        "HITL, decisiones de tamaño o bloqueos reales; explica la acción mínima que necesitas.\n"
     )
 
 
@@ -274,7 +275,7 @@ def create_workspace(cli: str, launch: dict[str, Any]) -> dict[str, Any]:
     return _json_output(result.stdout)
 
 
-DELIVERY_SESSION_NAME = "Entrega"
+DELIVERY_SESSION_NAME = "Generador"
 
 
 def workspace_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
@@ -341,7 +342,7 @@ def wait_for_bootstrap(
 def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any]) -> dict[str, Any]:
     # A resumed launch must not start a second delivery agent on the same workspace.
     for session in workspace_sessions(cli, workspace_id):
-        if session.get("name") == DELIVERY_SESSION_NAME:
+        if session.get("name") in {DELIVERY_SESSION_NAME, "Entrega"}:
             return {**session, "reused": True}
     arguments = [
         cli,

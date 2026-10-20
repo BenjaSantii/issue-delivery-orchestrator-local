@@ -39,23 +39,24 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
    agente que trabajará la issue hasta abrir su PR.
 4. Con la confirmación, repetir el comando con `--confirm`. El comando:
    1. crea el workspace con una **sesión de preparación** que espera el setup, verifica (o
-      instala con `pnpm conductor:toolbox`) el plugin 0.11.0 o mayor y las credenciales, y
+      instala con `pnpm conductor:toolbox`) el plugin 0.12.0 o mayor y las credenciales, y
       responde `IDO-BOOTSTRAP READY` o `IDO-BOOTSTRAP FAILED: <causa>`;
    2. lee esa sesión desde aquí hasta encontrar la respuesta (`--wait-minutes`, 25 por defecto);
-   3. con `READY`, crea en el mismo workspace la sesión **Entrega** con el mensaje del
+   3. con `READY`, crea en el mismo workspace la sesión **Generador** con el mensaje del
       orquestador. Al ser un proceso nuevo del agente, arranca con las skills del toolbox ya
       cargadas; no hace falta abrir otro chat a mano.
    Lanzar varias issues en secuencia: cada comando espera su propia preparación.
 5. Entregar `workspaceId` y la sesión de entrega. Ante `FAILED`, mostrar la causa; ante timeout,
    el comando imprime cómo reanudar: `cloud-launch --confirm --workspace <id>`, que retoma la
-   espera y nunca crea una segunda sesión Entrega.
+   espera y nunca crea una segunda sesión Generador. Reconoce también el nombre anterior
+   `Entrega` al reanudar para no duplicar sesiones existentes.
 6. Si la sesión de preparación se queda esperando sin avanzar, revisar el comando que está
    corriendo. Un `pgrep -f <texto>` sin corchetes dentro de un loop se encuentra a sí mismo y nunca
    termina (ver "Esperas sobre procesos" en
    [conductor-cloud.md](../issue-delivery-orchestrator/references/conductor-cloud.md)). Cancelar
    ese turno con `conductor session cancel <sesión>` y enviar a la misma sesión la instrucción
    corregida con `conductor message create --session <sesión> --message-file -`. El lanzador sigue
-   leyendo esa sesión y crea la Entrega cuando llegue `IDO-BOOTSTRAP READY`.
+   leyendo esa sesión y crea Generador cuando llegue `IDO-BOOTSTRAP READY`.
 7. Para seguir un workspace: `conductor workspace status <id>` y
    `conductor workspace session <id>`; no enviar mensajes a sus sesiones sin que el usuario lo pida.
 
@@ -64,7 +65,7 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 - `--branch <base o rama del padre>`, `--agent`, `--name "[ID] título"`.
 - Entorno: `CODEX_TOOLBOX_PROFILE`, `LINEAR_EXPECTED_EMAIL`, `GITHUB_EXPECTED_LOGIN`. El setup del
   repositorio (`pnpm conductor:setup`) instala el toolbox con ellos.
-- La sesión de preparación descrita arriba y, tras su `READY`, la sesión Entrega, que prepara la VM
+- La sesión de preparación descrita arriba y, tras su `READY`, la sesión Generador, que prepara la VM
   según [conductor-cloud.md](../issue-delivery-orchestrator/references/conductor-cloud.md) e inicia
   el orquestador con `--mode conductor`, indicando que el spec y los tickets ya fueron aprobados.
 

@@ -101,6 +101,21 @@ class PrQualityTests(unittest.TestCase):
         with self.assertRaises(Exception):
             record_pre_review(self.state, outside)
 
+    def test_conductor_does_not_require_or_fabricate_a_local_review(self):
+        self.state["mode"] = {"name": "conductor"}
+        assert_pre_review_current(self.state)
+        self.assertNotIn("preReview", self.state)
+        self.state["preReview"] = {"sha": "old", "result": "PASS"}
+        assert_pre_review_current(self.state)
+        self.assertEqual(self.state["preReview"]["sha"], "old")
+
+    def test_other_modes_still_require_a_current_local_review(self):
+        for mode in ("codex", "superset", "vanilla"):
+            with self.subTest(mode=mode):
+                self.state["mode"] = {"name": mode}
+                with self.assertRaises(RunBlocked):
+                    assert_pre_review_current(self.state)
+
     def test_publishes_validation_for_pushed_head_and_tracks_staleness(self):
         github = Mock()
         github.body.return_value = "## Resumen\nCambio"

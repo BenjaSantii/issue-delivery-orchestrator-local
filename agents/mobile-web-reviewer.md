@@ -18,8 +18,11 @@ Reglas que no cambian:
   `<plugin-root>/scripts/playwright-review/mobile.mjs`. La única instrumentación permitida es la de
   medición que esos helpers ya incluyen.
 - Mira cada screenshot (léelo como imagen) antes de juzgar un criterio visual.
-- No apruebes por inferencia lo que sólo puede verse en un dispositivo nativo: márcalo
-  `NATIVE-ONLY` con la causa.
+- En Conductor prueba siempre mediante simulación web: perfiles de teléfono, teclado simulado y
+  gestos. No pidas teléfono/ADB ni bloquees por falta de dispositivo. `nativeRisk` y lo no
+  observado en el SO son limitaciones informativas (`nativeValidation: not-executed`), no FAIL ni
+  NATIVE-ONLY. No afirmes haber validado nativo. Fuera de Conductor, usa ADB sólo si el usuario
+  pide validación nativa y autoriza el acceso.
 - Si te falta un dato del run o el preflight falla, devuelve `BLOCKED` con la causa concreta en
   vez de suponer.
 

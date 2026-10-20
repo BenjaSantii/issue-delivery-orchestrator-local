@@ -198,6 +198,11 @@ Prohibir el handoff hasta disponer de evidencia posterior al último cambio para
 
 ## 2. Implement
 
+En runs con `observabilityVersion: 1`, leer [run-metrics.md](references/run-metrics.md).
+El controlador registra metrics-start antes de cada ticket y metrics-finish tras su intento,
+actualizando el comentario de Linear. Usar otro intento para reparaciones y no inventar tokens
+si aún no terminó el turno del host. Los checkpoints registran las fases automáticamente.
+
 Procesar tickets en su orden aprobado. Antes de cada uno, entregar a `issue-delivery-implement` el spec completo, el ticket, el SHA inicial y la validación declarada para que la delegue a `test`.
 
 - Terminar primero los tickets AFK no bloqueados.
@@ -248,7 +253,20 @@ con git a mano.
 
 ## 4. Revisión manual
 
-Para apps Android nativas, cuando el usuario autorice ADB, aplicar [native-adb-evidence.md](references/native-adb-evidence.md). Esta excepción permite `provider=adb` en las evidencias nativas sin cambiar el modo ni el reviewer web persistidos. Las reglas de reviewer y provider de esta sección se aplican a web; la excepción nativa conserva los demás gates.
+Si `observabilityVersion: 1`, leer [fresh-qa.md](references/fresh-qa.md) y abrir/registrar una
+conversación nueva de QA, con el mismo runtime y los artefactos aprobados fijados al SHA.
+En Conductor hereda agente, modelo y esfuerzo del chat que llama al QA, sin fijar Codex.
+Los pasos de verificación siguientes los ejecuta ese reviewer, no el implementador. El
+controlador espera sus resultados, publica la evidencia y completa el checkpoint. Verificar
+consecuencias persistidas en DB, además del comportamiento UI/API. Los runs anteriores mantienen
+su flujo previo; no añadirles el flag ni actualizar sus chats para aplicar estas reglas.
+
+En modo Conductor, la validación móvil siempre es simulación web según
+`issue-delivery-mobile-web-review`; no requiere teléfono, ADB ni emulador nativo. Registrar las
+limitaciones del SO como informativas, sin afirmar validación nativa ni bloquear por dispositivo.
+Fuera de Conductor, si el usuario pide validación Android nativa y autoriza ADB, aplicar
+[native-adb-evidence.md](references/native-adb-evidence.md), que permite provider=adb sin cambiar
+el reviewer web persistido y conserva los demás gates.
 
 1. Inicializar un runtime persistente:
 
@@ -335,7 +353,10 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
    `issue-delivery-implement` antes de seguir. Nunca pushear una branch que ya se sabe roja en
    lint, typecheck, tests o chequeos de
    contrato/migraciones.
-2. **Review previa a la PR.** Pedir permiso para una ejecución de `local-reviewer` sobre la branch,
+2. **Review previa a la PR (fuera de Conductor).** En modo `conductor`, omitir LocalReviewer y
+   continuar tras QA y paridad CI: no pedir permisos, login, tokens ni un recibo para esta etapa.
+   Declarar en la PR `LocalReviewer: NOT_RUN — no requerido en Conductor`; no fabricar PASS.
+   Fuera de Conductor, pedir permiso para una ejecución de `local-reviewer` sobre la branch,
    indicando SHA, alcance y provider/modo. Ejecutarla sólo con autorización vigente, según
    `pr-blocker-convergence` y `pr-quality.md`. Una repetición exige permiso nuevo o una ejecución
    restante dentro de un ciclo explícitamente autorizado. Procesar sus findings con
@@ -345,7 +366,8 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
    python3 <plugin-root>/scripts/issue-delivery <issue> record-pre-review --receipt <ruta>
    ```
 
-   `ensure-pr` rechaza crear una PR nueva sin un recibo `PASS` o `SKIP_ONLY` del HEAD actual.
+   Fuera de Conductor, `ensure-pr` rechaza crear una PR nueva sin un recibo `PASS` o `SKIP_ONLY`
+   del HEAD actual. Las revisiones posteriores de GitHub se mantienen en todos los modos.
 3. **PR y validación visible.** Crear el body dentro del run y ejecutar:
 
    ```bash

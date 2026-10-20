@@ -1,6 +1,6 @@
 {
   "name": "issue-delivery-orchestrator-local",
-  "version": "0.11.3+codex.20261020194251",
+  "version": "0.12.0+codex.20261020202457",
   "description": "Deliver Linear issues from an approved spec through implementation, UI verification, pull request creation, and automated review convergence.",
   "author": {
     "name": "benjaminlillo",
@@ -30,7 +30,10 @@
       "Mobile web review with touch, keyboard, and gesture checks",
       "Approved QA script execution with results in Linear",
       "UI evidence publication",
-      "GitHub review convergence"
+      "GitHub review convergence",
+      "Delivery metrics in Linear",
+      "Fresh QA conversations with database consequences",
+      "Browser-only mobile simulation in Conductor"
     ],
     "defaultPrompt": "Use $issue-delivery-orchestrator to deliver this Linear issue from its approved spec through a verified pull request."
   }

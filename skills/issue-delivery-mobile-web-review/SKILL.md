@@ -13,10 +13,17 @@ teléfono con eventos táctiles reales y devolver evidencia reproducible.
 - En modo `conductor` los resultados son evidencia del run (`provider: playwright`).
 - En `superset`, `vanilla` o `codex` son diagnóstico adicional: un `FAIL` es un finding válido, pero
   el PASS de la historia sigue saliendo del reviewer fijado por el modo.
-- Web no reproduce el teclado nativo, `KeyboardAvoidingView`, `adjustResize`, hápticos, permisos
-  ni rendimiento de un dispositivo real. Marcar esos criterios como `NATIVE-ONLY` y devolverlos
-  como `BLOCKED` con la causa, salvo que el usuario autorice ADB según
-  [native-adb-evidence.md](../issue-delivery-orchestrator/references/native-adb-evidence.md).
+- En modo `conductor`, la validación móvil es SIEMPRE simulación web. No solicitar teléfono,
+  ADB, dispositivo físico ni emulador nativo como requisito de cierre. Usar los perfiles de
+  navegador, teclado simulado y gestos de esta skill, también si el producto es una app Expo.
+- Web no reproduce el sistema operativo ni certifica teclado, permisos, GPS de fondo, hápticos
+  o rendimiento nativos. Registrar esas limitaciones como observaciones informativas
+  (`nativeValidation: not-executed`), sin convertirlas en `BLOCKED`/`NATIVE-ONLY` en Conductor.
+  Verificar reglas y callbacks mediante simulación y tests focalizados cuando corresponda;
+  no afirmar que se probó el comportamiento real del SO.
+- Fuera de Conductor, ADB sólo se usa si el usuario pide validación nativa y autoriza el acceso,
+  según [native-adb-evidence.md](../issue-delivery-orchestrator/references/native-adb-evidence.md).
+  La falta de un dispositivo no bloquea una historia acordada como simulación web.
 
 ## Preflight
 
@@ -26,6 +33,13 @@ teléfono con eventos táctiles reales y devolver evidencia reproducible.
 3. Escribir los scripts en
    `.local-runtime/issue-delivery-orchestrator/<run-id>/validation/mobile/<story>.mjs` y las
    capturas en `validation/ui/`.
+4. En TurboShop, el vendedor puede probarse en Expo web con el mecanismo existente
+   `EXPO_PUBLIC_E2E_WEB_AUTH=true`, sólo en el proceso del runtime local/E2E. Inspeccionar
+   `apps/sales-force-app/src/utils/web-e2e-auth.ts`, `domain/services/web-session.ts` y el launcher
+   `scripts/sales-force-proposals-runtime.js` antes de declararlo inaccesible por rol. El launcher
+   separa vendedor (`true`) y manager web (`false`) en puertos del mismo runtime. El flag debe
+   estar presente antes de compilar el bundle; si falta, reiniciar únicamente ese Expo con su
+   configuración de QA. No cambiar guards, roles ni builds de producción para habilitar la prueba.
 
 ## Dispositivos
 
@@ -60,9 +74,9 @@ Para cada campo de texto de la historia:
    continuar) debe ser alcanzable con el teclado abierto. `how` indica cómo: `visible`, `scroll`
    (con swipes del dedo; nunca scroll programático) o `pan` (sólo iOS, desplazando la vista).
    `hidden` es `FAIL`.
-4. Todo `nativeRisk: true` no es `FAIL` en web, pero se reporta como `NATIVE-ONLY`: en la app
-   nativa de iOS ese elemento quedaría tapado si la pantalla no evita el teclado. Incluir la
-   captura con el teclado y la posición del elemento.
+4. `nativeRisk: true` es una limitación de extrapolar la simulación a nativo, no un FAIL ni un
+   bloqueo de web. Reportarlo como observación con la captura y la posición del elemento;
+   no inferir que la app nativa falla ni pedir un teléfono para convertirlo en PASS.
 5. Escribir con `locator.pressSequentially()` y confirmar que el texto y el layout no saltan;
    luego `hideKeyboard(page, phone)` y confirmar que el layout vuelve al estado inicial.
 6. Capturar un screenshot con el teclado abierto para cada campo crítico. El teclado no se dibuja:
@@ -111,7 +125,11 @@ await browser.close();
 
 ## Resultado
 
-Devolver por historia y dispositivo: `PASS`, `FAIL`, `BLOCKED` o `NATIVE-ONLY`, con las métricas
+Devolver por historia y perfil simulado: `PASS`, `FAIL` o `BLOCKED`, con las métricas
 de teclado y gestos, los screenshots (rutas bajo `validation/ui/`, con viewport en el caption) y,
 para cada `FAIL`, pasos mínimos, resultado esperado y observado e historias invalidadas. No editar
 código ni el manifiesto de evidencia: lo integra `issue-delivery-playwright-review`.
+Identificar el alcance como simulación web y `nativeValidation: not-executed`. En Conductor,
+BLOCKED se reserva para impedimentos reales de la prueba web (runtime, navegador, datos o acceso),
+no para la ausencia de teléfono. No aprobar fallos observados en la app ni relajar permisos para
+evitar un bloqueo. Conservar las limitaciones nativas como notas no bloqueantes.

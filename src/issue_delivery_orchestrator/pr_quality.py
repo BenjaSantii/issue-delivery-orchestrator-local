@@ -1,7 +1,7 @@
 """Gates that make a PR self-evidencing before automated reviewers see it.
 
-- Pre-PR review: a local adversarial review must run on the exact HEAD before a
-  new PR is opened, so reviewers stop finding what a local pass could find.
+- Pre-PR review: required on the exact HEAD outside Conductor. Cloud delivery
+  does not require an authenticated nested reviewer CLI.
 - Validation block: the PR body carries the validation receipt for the pushed
   HEAD, so reviewers without dependencies can audit what was actually run.
 """
@@ -15,7 +15,7 @@ from typing import Any
 
 from .errors import RunBlocked
 from .github import GitHubClient
-from .state import run_root, save_state
+from .state import run_mode, run_root, save_state
 from .util import ensure_within, run
 
 VALIDATION_START = "<!-- issue-delivery:validation:start -->"
@@ -72,6 +72,8 @@ def record_pre_review(state: dict[str, Any], receipt: Path) -> dict[str, Any]:
 
 
 def assert_pre_review_current(state: dict[str, Any]) -> None:
+    if run_mode(state) == "conductor":
+        return  # Not required by cloud policy; never fabricate a PASS receipt.
     recorded = state.get("preReview") or {}
     sha = head_sha(Path(state["worktree"]))
     if recorded.get("sha") != sha:

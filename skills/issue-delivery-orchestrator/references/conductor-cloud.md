@@ -1,5 +1,9 @@
 # Conductor Cloud
 
+LocalReviewer no es requerido en este modo. Omitir su ejecución y su recibo previo a la PR;
+no solicitar login o tokens de Claude/Codex para esa etapa. Declararlo NOT_RUN en la validación,
+sin inventar PASS. Mantener QA por web, paridad CI y convergencia de reviews de GitHub.
+
 Aplica a runs en modo `conductor`: un workspace de Conductor Cloud (`CONDUCTOR_IS_LOCAL=0`),
 normalmente creado con `issue-delivery-cloud-launch`. La VM es Linux, sin escritorio de macOS ni
 Docker, así que el reviewer fijo es `playwright` (Chromium headless dentro de la VM).
@@ -61,6 +65,16 @@ reconciliación cambia el alcance, pedir aprobación explícita en el chat antes
 
 ## Revisión manual
 
+Para runs nuevos con observabilityVersion 1, abrir una sesión QA distinta con `qa-session`
+según [fresh-qa.md](fresh-qa.md). Reutilizar el runtime de la VM, sin heredar el historial de
+Generador ni ejecutar un CLI de modelo anidado. El controlador publica métricas de tickets/fases
+según [run-metrics.md](run-metrics.md); tokens no atribuibles se marcan shared o N/D.
+
+Conductor SIEMPRE valida por web, incluida toda historia móvil. No pedir teléfono, ADB ni
+emulador nativo para cerrar QA. Usar `issue-delivery-mobile-web-review` con perfiles de teléfono,
+teclado simulado y gestos. Las limitaciones de teclado/GPS/permisos reales se documentan, y las
+reglas/callbacks se verifican con simulación y tests focalizados, sin certificar el SO nativo.
+
 Invocar `issue-delivery-playwright-review` para toda historia `UI`. Las historias en viewport de
 teléfono, con teclado o gestos táctiles, se delegan además al agente `mobile-web-reviewer`, o a la
 skill `issue-delivery-mobile-web-review` en hosts sin agentes. `launch-browser` no aplica en este
@@ -68,8 +82,8 @@ modo. Las capturas y recibos siguen el mismo contrato de evidencia, con `provide
 
 ## Límites
 
-- Una historia que sólo puede verificarse en un dispositivo nativo (teclado nativo, permisos,
-  cámara, notificaciones) se devuelve `BLOCKED` con la causa; no se aprueba por inferencia desde
-  web.
+- No usar la ausencia de dispositivo nativo como BLOCKED/NATIVE-ONLY. Registrar
+  `nativeValidation: not-executed` como limitación de la simulación. Fallos reales de la app o
+  infraestructura web siguen siendo FAIL/BLOCKED; no convertirlos en PASS ni inventar evidencia.
 - El preview público de Conductor (`conductor preview set`) no es necesario: Playwright corre en la
   misma VM que el Local Runtime.

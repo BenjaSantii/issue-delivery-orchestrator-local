@@ -111,8 +111,8 @@ export async function hideKeyboard(page, phone) {
 // Reports whether the focused field is usable with the keyboard open and not covered
 // by another element. On Android the field must sit above the keyboard. On iOS Safari
 // the visual viewport pans over the layout, so a field behind the keyboard is still
-// reachable in web, but the same layout would be covered in a native app without
-// keyboard avoidance: that case is flagged as `nativeRisk`.
+// reachable in web. `nativeRisk` flags a limit of this simulation; it does not prove
+// a native failure and must not block Conductor QA or require a physical device.
 export async function inspectFocused(page, { keyboardTop, platform }) {
   return page.evaluate(({ keyboardTop, platform }) => {
     const element = document.activeElement;

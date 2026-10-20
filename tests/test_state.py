@@ -45,14 +45,17 @@ class StateTests(unittest.TestCase):
         self.assertEqual(run_mode(self.state), "superset")
         self.assertEqual(review_method(self.state), "cua-driver")
         self.assertEqual(self.state["discardedInitialStatus"], [])
+        self.assertEqual(self.state["observabilityVersion"], 1)
 
     def test_advances_retired_merge_target_phase_to_manual_revision(self):
         path = run_root(self.worktree, "run-1") / "state.json"
         legacy_state = load_state(path)
         legacy_state["currentPhase"] = "merge-target"
+        legacy_state.pop("observabilityVersion")
         path.write_text(json.dumps(legacy_state), encoding="utf-8")
 
         self.assertEqual(load_state(path)["currentPhase"], "manual-revision")
+        self.assertNotIn("observabilityVersion", load_state(path))
 
     def test_finds_state_inside_additional_registered_worktree(self):
         separate_root = self.worktrees_root / "superset"
