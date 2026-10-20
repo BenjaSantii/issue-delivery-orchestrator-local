@@ -275,7 +275,7 @@ def create_workspace(cli: str, launch: dict[str, Any]) -> dict[str, Any]:
     return _json_output(result.stdout)
 
 
-DELIVERY_SESSION_NAME = "Entrega"
+DELIVERY_SESSION_NAME = "Generador"
 
 
 def workspace_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
@@ -342,7 +342,7 @@ def wait_for_bootstrap(
 def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any]) -> dict[str, Any]:
     # A resumed launch must not start a second delivery agent on the same workspace.
     for session in workspace_sessions(cli, workspace_id):
-        if session.get("name") == DELIVERY_SESSION_NAME:
+        if session.get("name") in {DELIVERY_SESSION_NAME, "Entrega"}:
             return {**session, "reused": True}
     arguments = [
         cli,

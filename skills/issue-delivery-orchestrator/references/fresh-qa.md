@@ -8,6 +8,7 @@ humanos queda fuera de esta implementación.
 ## Abrir el reviewer
 
 Tras Implement/Refactor, preparar una vez el Local Runtime con sus cuentas y datos sembrados.
+El chat que implementa se llama `Generador`; el evaluador se llama `QA <run> <commit> <contrato>`.
 El implementador entrega spec, tickets, SHA, runtime y URLs; no un relato de por qué su trabajo
 debería aprobarse. Mantener el código quieto mientras QA verifica ese candidato.
 

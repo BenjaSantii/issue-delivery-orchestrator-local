@@ -97,7 +97,7 @@ class FreshQATests(unittest.TestCase):
         for agent, model, effort in (("codex", "gpt-6.1-sol", "high"), ("claude", "opus-5-5-1m", "max")):
             with self.subTest(agent=agent):
                 self.state.pop("qaSession", None)
-                sessions = [{"id": "implementation", "name": "Entrega", "model": model, "effort": effort}]
+                sessions = [{"id": "implementation", "name": "Generador", "model": model, "effort": effort}]
                 catalog = {"agents": [{"agent": agent, "models": [model], "efforts": [effort, "low"]}]}
                 created = []
                 def fake_run(args, **kwargs):

@@ -67,7 +67,7 @@ reconciliación cambia el alcance, pedir aprobación explícita en el chat antes
 
 Para runs nuevos con observabilityVersion 1, abrir una sesión QA distinta con `qa-session`
 según [fresh-qa.md](fresh-qa.md). Reutilizar el runtime de la VM, sin heredar el historial de
-Entrega ni ejecutar un CLI de modelo anidado. El controlador publica métricas de tickets/fases
+Generador ni ejecutar un CLI de modelo anidado. El controlador publica métricas de tickets/fases
 según [run-metrics.md](run-metrics.md); tokens no atribuibles se marcan shared o N/D.
 
 Conductor SIEMPRE valida por web, incluida toda historia móvil. No pedir teléfono, ADB ni
