@@ -4,6 +4,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -360,12 +362,11 @@ def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any])
     return _json_output(run(arguments, input_text=launch["message"]).stdout)
 
 
-TRANSCRIPT_PAGE_SIZE = 25
+TRANSCRIPT_PAGE_SIZE = 50
 
 
 def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
-    # The Conductor CLI truncates large JSON outputs, so pages stay small and shrink
-    # until they parse; a truncated page must never read as an empty transcript.
+    # A truncated page must never read as an empty transcript.
     items: list[Any] = []
     offset = 0
     while True:
@@ -380,10 +381,10 @@ def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
 def _transcript_page(cli: str, session_id: str, offset: int) -> dict[str, Any]:
     limit = TRANSCRIPT_PAGE_SIZE
     while True:
-        stdout = run(
+        stdout = _cli_output(
             [cli, "session", "message", session_id, "--limit", str(limit),
              "--offset", str(offset), "--json"],
-        ).stdout
+        )
         try:
             page = json.loads(stdout)
         except json.JSONDecodeError:
@@ -394,6 +395,24 @@ def _transcript_page(cli: str, session_id: str, offset: int) -> dict[str, Any]:
             limit = max(1, limit // 2)
             continue
         return page if isinstance(page, dict) else {"data": page}
+
+
+def _cli_output(arguments: list[str]) -> str:
+    """Run the Conductor CLI with stdout redirected to a file.
+
+    Writing to a pipe, the CLI exits before flushing and cuts its output at 128 KiB,
+    so large transcript pages arrive as broken JSON. A regular file receives it whole.
+    """
+    with tempfile.TemporaryFile(mode="w+") as output:
+        result = subprocess.run(
+            arguments, stdout=output, stderr=subprocess.PIPE, text=True, check=False
+        )
+        if result.returncode != 0:
+            raise OrchestrationError(
+                f"{' '.join(arguments[1:4])} failed: {result.stderr.strip() or result.returncode}"
+            )
+        output.seek(0)
+        return output.read()
 
 
 def _assistant_texts(payload: Any) -> list[str]:
