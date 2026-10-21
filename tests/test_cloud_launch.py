@@ -1,3 +1,4 @@
+import sys
 import json
 import os
 import subprocess
@@ -363,7 +364,7 @@ class TranscriptPagingTests(unittest.TestCase):
             offset = int(arguments[arguments.index("--offset") + 1])
             calls.append((limit, offset))
             result = type("Result", (), {})()
-            if limit > 10:
+            if limit > 30:
                 result.stdout = '{"data": [{"type": "agent"'  # cut mid-object
             elif offset == 0:
                 result.stdout = json.dumps({"data": [{"type": "agent"}] * limit, "hasMore": True})
@@ -371,11 +372,11 @@ class TranscriptPagingTests(unittest.TestCase):
                 result.stdout = json.dumps({"data": [{"type": "agent"}], "hasMore": False})
             return result
 
-        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+        with patch("issue_delivery_orchestrator.cloud_launch._cli_output", side_effect=lambda a: fake_run(a).stdout):
             transcript = _session_transcript("conductor", "s-1")
 
-        self.assertEqual(len(transcript["data"]), 7)
-        self.assertEqual(calls[:3], [(25, 0), (12, 0), (6, 0)])
+        self.assertEqual(len(transcript["data"]), 26)
+        self.assertEqual(calls[:2], [(50, 0), (25, 0)])
 
     def test_unreadable_page_raises_instead_of_reading_empty(self):
         from issue_delivery_orchestrator.cloud_launch import _session_transcript
@@ -385,7 +386,7 @@ class TranscriptPagingTests(unittest.TestCase):
             result.stdout = "not json"
             return result
 
-        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+        with patch("issue_delivery_orchestrator.cloud_launch._cli_output", side_effect=lambda a: fake_run(a).stdout):
             with self.assertRaisesRegex(OrchestrationError, "unreadable transcript page"):
                 _session_transcript("conductor", "s-1")
 
@@ -507,4 +508,20 @@ class CloudResumeTests(unittest.TestCase):
             with self.assertRaisesRegex(RunBlocked, "still has working sessions"):
                 cloud_resume(Namespace(issue="LOG-201", workspace="ws-1", agent="claude",
                                        model="opus-5-5-1m", confirm=True))
+
+
+class CliOutputTests(unittest.TestCase):
+    def test_large_output_is_read_whole_through_a_file(self):
+        from issue_delivery_orchestrator.cloud_launch import _cli_output
+
+        script = "import json,sys; sys.stdout.write(json.dumps({'data': ['x' * 400000]}))"
+        output = _cli_output([sys.executable, "-c", script])
+
+        self.assertEqual(len(json.loads(output)["data"][0]), 400000)
+
+    def test_failure_raises_with_stderr(self):
+        from issue_delivery_orchestrator.cloud_launch import _cli_output
+
+        with self.assertRaisesRegex(OrchestrationError, "boom"):
+            _cli_output([sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"])
 
