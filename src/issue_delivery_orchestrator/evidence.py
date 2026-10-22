@@ -90,6 +90,7 @@ def publish_evidence(
             provider=verification.get("provider", "cua-driver"),
             headless_assistance=verification.get("headlessAssistance", []),
             upload_assistance=verification.get("uploadAssistance", []),
+            linear_url=issue.url,
         )
         pr_comment_id = github.upsert_comment(int(pr["number"]), marker, pr_body)
 
@@ -169,6 +170,7 @@ def repair_github_evidence(
                 "uploadAssistance",
                 [],
             ),
+            linear_url=receipt.get("linearIssue"),
         ),
     )
     updated = {

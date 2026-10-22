@@ -301,19 +301,17 @@ el reviewer web persistido y conserva los demás gates.
    Si el spec aprobado tiene `## QA Script`, ejecutar **todos** sus casos según
    [qa-script.md](references/qa-script.md): los `UI` con el reviewer del modo y los `API` o
    `command` con scripts del run contra el Local Runtime, incluida la concurrencia real. Guardar
-   `validation/qa-results.json` y publicarlo con `publish-qa-results` (comentario en Linear con
+   `validation/qa-results.json` y publicarlo con `publish-run` (comentario en Linear con
    capturas y salidas). Un `FAIL` o `BLOCKED` se repara antes de seguir; sólo el usuario puede
    convertirlo en `WAIVED`.
 5. Ningún reviewer edita código. Entregar findings a `issue-delivery-implement`, reparar y repetir sólo las historias invalidadas con el mismo método.
 6. Permitir como máximo cinco ciclos revisión-reparación.
 7. Leer
-   [evidence-annotations.md](references/evidence-annotations.md). Conservar únicamente capturas
-   originales del estado final aceptado y producir un manifiesto v2 con `provider` igual al método
-   seleccionado. Exigir callouts honestos sobre lo nuevo o `annotationReason` para cambios globales.
-8. Ejecutar
-   `python3 <plugin-root>/scripts/issue-delivery <issue> prepare-evidence --manifest <ruta>`,
-   inspeccionar la copia anotada y corregir bounds o captions antes del checkpoint. El motor
-   preserva el original.
+   [evidence-annotations.md](references/evidence-annotations.md). Conservar en `validation/ui/`
+   únicamente capturas del estado final aceptado, con nombres convencionales, y escribir una línea
+   por historia en `validation/notes.md`. Callouts sólo cuando el caption no baste.
+8. Ejecutar `python3 <plugin-root>/scripts/issue-delivery <issue> publish-run`. Antes de la PR
+   publica en Linear y deja `validation/ui-manifest.json` listo para el checkpoint.
 
 Al terminar la revisión final o bloquear el run, cerrar sólo el navegador propio del run en host
 o, si se usó Docker, retirar sólo su sandbox Cua, y registrar la limpieza según el contrato.
@@ -332,8 +330,8 @@ Completar la fase con:
 
 ```bash
 python3 <plugin-root>/scripts/issue-delivery <issue> checkpoint \
-  --phase manual-revision --artifact ui-manifest=<ruta> \
-  [--artifact qa-results=<ruta>]
+  --phase manual-revision --artifact ui-manifest=<run>/validation/ui-manifest.json \
+  [--artifact qa-results=<run>/validation/qa-results.json]
 ```
 
 El checkpoint vuelve a preparar y validar las anotaciones. Con un QA Script aprobado exige además
@@ -371,32 +369,25 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
 
    Fuera de Conductor, `ensure-pr` rechaza crear una PR nueva sin un recibo `PASS` o `SKIP_ONLY`
    del HEAD actual. Las revisiones posteriores de GitHub se mantienen en todos los modos.
-3. **PR y validación visible.** Crear el body dentro del run y ejecutar:
+3. **PR y validación visible.** Crear el body dentro del run, escribir
+   `validation/pr-validation.md` y ejecutar:
 
    ```bash
    python3 <plugin-root>/scripts/issue-delivery <issue> ensure-pr --body-file <ruta>
-   python3 <plugin-root>/scripts/issue-delivery <issue> publish-validation --receipt <ruta>
-   python3 <plugin-root>/scripts/issue-delivery <issue> publish-evidence --manifest <ruta>
-   python3 <plugin-root>/scripts/issue-delivery <issue> publish-qa-results --results <ruta>
+   python3 <plugin-root>/scripts/issue-delivery <issue> publish-run
    ```
 
-   Repetir `publish-qa-results` cuando exista QA Script para que el resultado quede también como
-   comentario en la PR.
+   `publish-run` publica evidencia UI, resultados QA y el bloque de validación desde la carpeta
+   del run. En la PR deja una imagen por historia, el resto colapsado y links a Linear, que guarda
+   el detalle completo. Los comandos `publish-evidence`, `publish-qa-results` y
+   `publish-validation` siguen disponibles para publicar una sola parte.
 
-   `publish-validation` reemplaza el bloque marcado de validación del body con el recibo del HEAD
+   El bloque de validación reemplaza el bloque marcado del body con el recibo del HEAD
    pusheado. Los checkpoints `pr-creation` y `review-convergence` bloquean si ese bloque no
    corresponde al HEAD actual.
 
-Publicar cada PNG anotado en dos destinos distintos:
-
-- Linear: copia privada para `## UI enhancements`.
-- GitHub: copia en la evidence branch del perfil, fuera de la branch y diff de producto.
-
-Publicar además el PNG original en ambos destinos y enlazarlo bajo la imagen anotada. Las
-anotaciones son evidencia explicativa; nunca reemplazan la captura original auditable.
-
-El comentario de la PR debe usar exclusivamente las rutas relativas devueltas por el motor. No
-insertar URLs privadas de uploads de Linear: el proxy de imágenes de GitHub no puede renderizarlas.
+El motor sube las capturas a Linear y a la evidence branch del perfil, fuera del diff de producto.
+No editar a mano el comentario de evidencia ni insertar URLs de uploads de Linear en GitHub.
 
 Si un run antiguo ya publicó links rotos, repararlos sin repetir la validación funcional:
 
@@ -434,7 +425,7 @@ y sólo la sección `BLOCKERS` de los `blockerBots` (x100 en TurboShop); ignorar
 opcionales y comentarios humanos durante el ciclo automático.
 
 1. Entregar el snapshot completo a `pr-blocker-convergence`; esa skill agrega nuevos blockers, deduplica por causa raíz y decide `FIX`, `SKIP`, `NEEDS_USER_DECISION` o `STOP`.
-2. Reparar automáticamente cada `FIX/MODEL` mediante `issue-delivery-implement`. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI sobre el delta completo y hacer un único push por ronda. Inmediatamente después del push, regenerar el recibo y ejecutar `publish-validation` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
+2. Reparar automáticamente cada `FIX/MODEL` mediante `issue-delivery-implement`. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI sobre el delta completo y hacer un único push por ronda. Inmediatamente después del push, regenerar `validation/pr-validation.md` y ejecutar `publish-run` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
 3. Si una solicitud exige negocio, arquitectura incompatible o cambiar un acuerdo vigente, registrar `NEEDS_USER_DECISION`, completar primero trabajo independiente seguro y pausar.
 4. Si una cadena acumula dos iteraciones de reparación fallidas, registrar `STOP`, no intentar otro parche y avisar al usuario con la línea temporal y alternativas.
 5. Si el usuario mantiene el spec, guardar `SKIP/PRIOR_DECISION`. Si acepta al reviewer, reconciliar primero spec y tickets en Linear y recién después editar.

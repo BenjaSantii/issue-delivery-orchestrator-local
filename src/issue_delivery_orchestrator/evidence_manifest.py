@@ -133,16 +133,17 @@ def _screenshots(manifest: Any, worktree: Path) -> list[dict[str, Any]]:
             raise OrchestrationError(
                 f"Screenshot {index} cannot contain callouts and annotationReason"
             )
-        if version == 2 and not callouts and not annotation_reason:
+        caption = str(item.get("caption") or "").strip()
+        if version == 2 and not callouts and not annotation_reason and not caption:
             raise OrchestrationError(
-                f"Screenshot {index} must contain callouts or annotationReason"
+                f"Screenshot {index} must contain a caption, callouts or annotationReason"
             )
         result.append(
             {
                 "storyId": story_id,
                 "publishToGithub": publish_to_github,
                 "title": str(item.get("title") or path.stem).strip(),
-                "caption": str(item.get("caption") or "").strip(),
+                "caption": caption,
                 "path": path,
                 "originalPath": path,
                 "displayPath": path,

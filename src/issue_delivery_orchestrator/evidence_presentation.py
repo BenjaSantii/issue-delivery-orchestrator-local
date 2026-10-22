@@ -23,8 +23,10 @@ def pr_body(
     provider: str = "cua-driver",
     headless_assistance: list[dict[str, Any]] | None = None,
     upload_assistance: list[dict[str, Any]] | None = None,
+    linear_url: str | None = None,
 ) -> str:
-    items = []
+    stories: dict[str, list[str]] = {}
+    titles: dict[str, str] = {}
     for asset in assets:
         if not asset.get("publishToGithub", True):
             continue
@@ -38,10 +40,19 @@ def pr_body(
             asset,
             original_url=asset.get("githubOriginalUrl"),
         )
-        items.append(
-            f"### {asset['storyId']} — {asset['title']}\n\n"
+        stories.setdefault(asset["storyId"], []).append(
             f"![{asset['title']}]({github_url}){caption}"
         )
+        titles.setdefault(asset["storyId"], asset["title"])
+    items = []
+    for story_id, images in stories.items():
+        item = f"### {story_id} — {titles[story_id]}\n\n{images[0]}"
+        if len(images) > 1:
+            item += (
+                f"\n\n<details>\n<summary>Más capturas de {story_id} "
+                f"({len(images) - 1})</summary>\n\n" + "\n\n".join(images[1:]) + "\n\n</details>"
+            )
+        items.append(item)
     method = {
         "codex-browser": "Browser integrado de Codex",
         "cua-driver": "Cua Driver",
@@ -73,18 +84,24 @@ def pr_body(
         if any(asset.get("callouts") for asset in assets)
         else ""
     )
+    linear_notice = (
+        f" El set completo de capturas está en [Linear]({linear_url})."
+        if linear_url
+        else ""
+    )
     return (
         f"{marker}\n"
         "## Evidencia visual final\n\n"
         f"Capturas verificadas mediante {method} sobre el estado aceptado."
-        f"{annotation_notice}\n\n"
+        f"{annotation_notice}"
+        f"{linear_notice}\n\n"
         + "\n\n".join(items)
     )
 
 
 def _asset_caption(asset: dict[str, Any], *, original_url: str | None) -> str:
     parts = []
-    if asset.get("caption"):
+    if asset.get("caption") and asset["caption"] != asset.get("title"):
         parts.append(str(asset["caption"]))
     callouts = asset.get("callouts") or []
     if callouts:

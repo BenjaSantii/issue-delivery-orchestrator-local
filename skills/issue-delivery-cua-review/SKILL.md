@@ -92,44 +92,15 @@ No entregar control al usuario para que verifique mientras exista un `FAIL` o `B
 
 Leer
 [evidence-annotations.md](../issue-delivery-orchestrator/references/evidence-annotations.md).
-Calcular bounds desde la misma captura aceptada y su árbol de accesibilidad, si está disponible.
-Usar coordenadas del PNG exacto cuando el árbol no exponga una región útil. Ejecutar `prepare-evidence` e
-inspeccionar la copia anotada antes de devolver PASS.
+Guardar en `validation/ui/` sólo PNG del estado final aceptado, con nombre
+`<ID>-<NN>-<slug>.png`, y escribir en `validation/notes.md` una línea `<ID>: qué demuestra` por
+historia. No escribir el manifiesto: lo genera `publish-run`. Incluir una captura por punto visual
+relevante, sin secretos, estados fallidos intermedios ni duplicados.
+
+Callouts sólo cuando el caption no baste, con bounds del árbol de accesibilidad de la misma
+captura o, si no expone una región útil, de las coordenadas del PNG exacto.
 
 En host, cerrar al terminar sólo el navegador y la sesión propios del run. En Docker, conservar el
 sandbox durante los ciclos revisión-reparación y retirar sólo el sandbox propio al terminar la
 revisión final o al bloquear el run. Conservar las capturas y el recibo del entorno.
 
-Generar un manifiesto JSON v2 compatible con `issue-delivery-orchestrator`:
-
-```json
-{
-  "evidenceVersion": 2,
-  "verification": {
-    "status": "PASS",
-    "provider": "cua-driver",
-    "verifiedCommit": "<sha>",
-    "runtimeId": "<runtime-id>",
-    "verifiedAt": "<ISO-8601>",
-    "scenarioIds": ["REPAIR-1"]
-  },
-  "screenshots": [
-    {
-      "storyId": "US-1",
-      "title": "Descripción del estado",
-      "caption": "Criterio demostrado",
-      "path": ".local-runtime/issue-delivery-orchestrator/<run-id>/validation/ui/US-1.png",
-      "callouts": [
-        {
-          "kind": "highlight",
-          "caption": "Elemento nuevo verificado",
-          "bounds": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}
-        }
-      ]
-    }
-  ]
-}
-```
-
-Incluir al menos una captura por punto visual relevante, sin duplicar estados equivalentes. No incluir capturas de fallos intermedios en el manifiesto final.
-Usar `annotationReason` sólo para cambios globales donde destacar una región sería engañoso.

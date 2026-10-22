@@ -212,6 +212,24 @@ class EvidenceVerificationTests(unittest.TestCase):
         self.assertIn("../blob/codex-ui-evidence/path/image.png?raw=true", body)
         self.assertNotIn("uploads.linear.app", body)
 
+    def test_pr_body_shows_one_image_per_story_and_collapses_the_rest(self):
+        body = _pr_body(
+            "<!-- marker -->",
+            [
+                {"storyId": "US-1", "title": "Main", "githubUrl": "../main.png"},
+                {"storyId": "US-1", "title": "Detail", "githubUrl": "../detail.png"},
+                {"storyId": "US-2", "title": "Other", "githubUrl": "../other.png"},
+            ],
+            linear_url="https://linear.app/ts/issue/TS-1",
+        )
+
+        self.assertIn("### US-1 — Main\n\n![Main](../main.png)", body)
+        self.assertNotIn("### US-1 — Detail", body)
+        self.assertIn("<summary>Más capturas de US-1 (1)</summary>", body)
+        self.assertLess(body.index("<details>"), body.index("../detail.png"))
+        self.assertIn("### US-2 — Other", body)
+        self.assertIn("[Linear](https://linear.app/ts/issue/TS-1)", body)
+
     def test_linear_only_assets_are_not_uploaded_or_rendered_in_github(self):
         from issue_delivery_orchestrator.evidence_assets import ensure_github_assets
         from unittest.mock import Mock
@@ -941,6 +959,60 @@ class EvidenceVerificationTests(unittest.TestCase):
         receipt = self.assert_publication(self.adb_manifest())
         self.assertEqual(receipt["verification"]["provider"], "adb")
         self.assertEqual(receipt["verification"]["nativeReview"]["transport"], "wireless")
+
+    def test_publishes_validation_folder_without_handwritten_manifest(self):
+        from issue_delivery_orchestrator.run_evidence import ui_manifest
+
+        state = {
+            "worktree": str(self.worktree),
+            "runId": "run-1",
+            "issue": {"identifier": "US-1"},
+            "runtimes": [{"runtimeId": "rt-1"}],
+            "artifacts": {},
+            "pr": None,
+        }
+        folder = run_root(self.worktree, "run-1") / "validation"
+        (folder / "ui").mkdir(parents=True)
+        png = encode_png(PngImage(10, 10, bytearray((255, 255, 255, 255) * 100)))
+        for name in ("US-10.png", "US-2-02-detalle.png", "US-2-01-lista.png", "US-2-01-lista.annotated.png", "US-3-evaluación.png"):
+            (folder / "ui" / name).write_bytes(png)
+        (folder / "notes.md").write_text(
+            "- US-2: El filtro deja solo pendientes\n- US-10: Exporta el CSV\n"
+            "- US-3-evaluación: Siete estrellas\n"
+        )
+
+        manifest_path = ui_manifest(state)
+        manifest = read_json(manifest_path)
+
+        self.assertEqual(
+            [(item["storyId"], item["title"], item["caption"]) for item in manifest["screenshots"]],
+            [
+                ("US-2", "Lista", "El filtro deja solo pendientes"),
+                ("US-2", "Detalle", "Detalle"),
+                ("US-3", "Evaluación", "Siete estrellas"),
+                ("US-10", "US-10", "Exporta el CSV"),
+            ],
+        )
+        self.assertEqual(manifest["verification"]["verifiedCommit"], self.head)
+        self.assertEqual(manifest["verification"]["scenarioIds"], ["US-2", "US-3", "US-10"])
+        first_run = manifest["verification"]["verifiedAt"]
+        self.assertEqual(read_json(ui_manifest(state))["verification"]["verifiedAt"], first_run)
+
+        receipt = self.publish(state, manifest_path)
+        self.assertEqual(len(receipt["assets"]), 4)
+        self.assertFalse(any(asset["callouts"] for asset in receipt["assets"]))
+
+        manifest_path.write_text(json.dumps({"verification": {}, "screenshots": []}))
+        self.assertEqual(read_json(ui_manifest(state)), {"verification": {}, "screenshots": []})
+
+    def publish(self, state, manifest_path):
+        linear = SimpleNamespace(
+            upload_file=lambda path: f"https://linear.example/{Path(path).name}",
+            issue=lambda _id: SimpleNamespace(id="linear-id", url="https://linear/US-1", description=""),
+            update_description=lambda *_: None,
+            post_comment=lambda *_: None,
+        )
+        return publish_evidence(state, manifest_path, linear=linear, github=None)
 
     def assert_publication(self, manifest):
         screenshot = self.worktree / "screen.png"

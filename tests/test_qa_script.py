@@ -13,6 +13,7 @@ from issue_delivery_orchestrator.qa_script import (
     lint_qa_script,
     qa_cases,
     qa_comment_body,
+    qa_github_comment_body,
     validate_qa_results,
 )
 from issue_delivery_orchestrator.state import run_root
@@ -277,12 +278,29 @@ class ResultsTests(unittest.TestCase):
         self.assertEqual(results["cases"][1]["status"], "WAIVED")
 
     def test_ui_pass_needs_a_screenshot(self):
+        self.screenshot.unlink()
         with self.assertRaisesRegex(OrchestrationError, "needs at least one screenshot"):
             validate_qa_results(self.state, self.results(**{"QA-001": {"screenshots": []}}))
 
     def test_backend_pass_needs_its_output(self):
+        self.output.unlink()
         with self.assertRaisesRegex(OrchestrationError, "needs its command output file"):
             validate_qa_results(self.state, self.results(**{"QA-002": {"output": None}}))
+
+    def test_evidence_and_summary_are_found_by_convention(self):
+        (self.root / "validation" / "notes.md").write_text("- QA-002: 200 desde notas\n")
+        path = self.results(
+            **{
+                "QA-001": {"screenshots": []},
+                "QA-002": {"output": None, "summary": ""},
+            }
+        )
+
+        results = validate_qa_results(self.state, path)
+
+        self.assertEqual(results["cases"][0]["screenshots"], [self.relative(self.screenshot)])
+        self.assertEqual(results["cases"][1]["output"], self.relative(self.output))
+        self.assertEqual(results["cases"][1]["summary"], "200 desde notas")
 
     def test_evidence_must_live_in_the_run(self):
         outside = self.worktree / "notes.txt"
@@ -325,6 +343,15 @@ class ResultsTests(unittest.TestCase):
         self.assertIn("| QA-003 | concurrency | API |", body)
         self.assertIn("![QA-001](https://uploads.linear.app/qa-001.png)", body)
         self.assertIn("409 x9", body)
+
+        github_body = qa_github_comment_body(
+            "run-1", results, self.worktree, "https://linear.app/ts/issue/TS-1"
+        )
+        self.assertIn("| QA-003 | concurrency | API |", github_body)
+        self.assertNotIn("uploads.linear.app", github_body)
+        self.assertIn("[Linear](https://linear.app/ts/issue/TS-1)", github_body)
+        self.assertIn("<summary>QA-003: detalle</summary>", github_body)
+        self.assertIn("409 x9", github_body)
 
     def test_publish_uploads_screenshots_and_upserts_comment(self):
         linear = FakeLinear()
