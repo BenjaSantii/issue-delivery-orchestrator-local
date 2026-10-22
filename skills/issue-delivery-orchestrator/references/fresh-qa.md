@@ -53,6 +53,10 @@ no sólo el clic, selector, toast o código HTTP.
 En Conductor esto SIEMPRE significa web y simulación de teléfono con la skill mobile-web-review;
 no pedir teléfono/ADB ni bloquear por su ausencia. Declarar las limitaciones de SO/GPS/permisos
 como no observadas y usar simulación/tests de callbacks para las reglas verificables.
+Aplicar [conductor-validation.md](conductor-validation.md): usar localhost en puertos 3001–3004
+para las vistas web; comprobar GPS, Alert y otros contratos nativos con Jest o scripts. Un caso
+respaldado por esas assertions y su evidencia web aplicable puede ser PASS sin dispositivo ni
+WAIVED. Conservar la distinción entre lógica probada y comportamiento del SO no observado.
 
 Para casos que escriben, reintentan, rechazan o revierten persistencia, verificar la DB local:
 

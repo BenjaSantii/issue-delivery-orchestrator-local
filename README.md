@@ -69,6 +69,10 @@ browser QA, CI parity and GitHub review convergence remain required. Other modes
 local-review gate and permissions below.
 Fresh Conductor QA chats inherit the calling chat's agent, model and reasoning effort; they
 do not force Codex or a fixed model. The review still starts with a new conversation context.
+Conductor browser apps use localhost ports 3001–3004. Native contracts (GPS lifecycle,
+permissions, alerts) are checked with focused Jest tests or scripts against real code and
+mocked OS adapters. Passing that evidence does not require a phone or waiver; actual OS
+behavior remains unobserved. See the bundled conductor-validation reference.
 
 A request to check blockers reads and classifies existing feedback. It does not authorize repairs,
 tests, commits, pushes, comment resolution, or LocalReviewer. Invoking the convergence skill after

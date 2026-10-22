@@ -264,6 +264,9 @@ su flujo previo; no añadirles el flag ni actualizar sus chats para aplicar esta
 En modo Conductor, la validación móvil siempre es simulación web según
 `issue-delivery-mobile-web-review`; no requiere teléfono, ADB ni emulador nativo. Registrar las
 limitaciones del SO como informativas, sin afirmar validación nativa ni bloquear por dispositivo.
+Aplicar [conductor-validation.md](references/conductor-validation.md): vistas web en
+localhost:3001–3004 y contratos nativos validados con Jest o scripts, con sus assertions como
+evidencia del caso. No exigir teléfono ni WAIVED si la validación acordada pasa.
 Fuera de Conductor, si el usuario pide validación Android nativa y autoriza ADB, aplicar
 [native-adb-evidence.md](references/native-adb-evidence.md), que permite provider=adb sin cambiar
 el reviewer web persistido y conserva los demás gates.

@@ -119,6 +119,10 @@ this fixed closure phase into a separate implementation ticket.
 For Conductor, define mobile acceptance as web simulation (phone viewport, touch, simulated
 keyboard and focused code tests for lifecycle callbacks). Do not introduce a physical-device/ADB
 requirement merely because the product is Expo/native. Record OS-specific limits as observations.
+Use [conductor-validation.md](../issue-delivery-orchestrator/references/conductor-validation.md):
+native contracts use Jest/scripts against real code with mocked OS adapters; browser UI uses
+localhost ports 3001–3004. State these methods in QA Steps/Evidence so a passing native-contract
+test does not later turn into a phone or waiver requirement.
 
 ## Design the QA script
 

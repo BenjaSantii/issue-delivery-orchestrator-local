@@ -23,6 +23,9 @@ Reglas que no cambian:
   observado en el SO son limitaciones informativas (`nativeValidation: not-executed`), no FAIL ni
   NATIVE-ONLY. No afirmes haber validado nativo. Fuera de Conductor, usa ADB sólo si el usuario
   pide validación nativa y autoriza el acceso.
+- En Conductor, sigue `references/conductor-validation.md` del orquestador: abre la web en
+  localhost:3001–3004 y verifica reglas nativas con Jest/scripts contra código real. Adjunta las
+  assertions; no pidas una exención por no tener teléfono cuando esa validación pasa.
 - Si te falta un dato del run o el preflight falla, devuelve `BLOCKED` con la causa concreta en
   vez de suponer.
 

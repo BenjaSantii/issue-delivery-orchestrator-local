@@ -248,7 +248,7 @@ class MessageTests(unittest.TestCase):
 
         self.assertIn("claude plugin list --json", message)
         self.assertIn("CODEX_TOOLBOX_PROFILE=benjasanti pnpm conductor:toolbox", message)
-        self.assertIn("0.12.0", message)
+        self.assertIn("0.12.1", message)
         self.assertIn("IDO-BOOTSTRAP READY", message)
         self.assertIn("no trabajes ninguna issue", message)
 

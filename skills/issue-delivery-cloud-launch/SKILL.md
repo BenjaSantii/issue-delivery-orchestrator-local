@@ -39,7 +39,7 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
    agente que trabajará la issue hasta abrir su PR.
 4. Con la confirmación, repetir el comando con `--confirm`. El comando:
    1. crea el workspace con una **sesión de preparación** que espera el setup, verifica (o
-      instala con `pnpm conductor:toolbox`) el plugin 0.12.0 o mayor y las credenciales, y
+      instala con `pnpm conductor:toolbox`) el plugin 0.12.1 o mayor y las credenciales, y
       responde `IDO-BOOTSTRAP READY` o `IDO-BOOTSTRAP FAILED: <causa>`;
    2. lee esa sesión desde aquí hasta encontrar la respuesta (`--wait-minutes`, 25 por defecto);
    3. con `READY`, crea en el mismo workspace la sesión **Generador** con el mensaje del
