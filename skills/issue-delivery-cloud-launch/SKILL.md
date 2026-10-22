@@ -60,6 +60,22 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 7. Para seguir un workspace: `conductor workspace status <id>` y
    `conductor workspace session <id>`; no enviar mensajes a sus sesiones sin que el usuario lo pida.
 
+## Reanudar una sesión que murió
+
+Si la sesión Entrega (u otra del run) se detiene, por ejemplo por límite de uso, retomar el run en
+el mismo workspace con una sesión nueva:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> cloud-resume            # sólo el plan
+python3 <plugin-root>/scripts/issue-delivery <issue> cloud-resume --confirm  # crea la sesión
+```
+
+Busca el workspace `[<issue>] …`, bloquea si alguna de sus sesiones sigue `working` (para que
+dos agentes no compartan el worktree) y crea `Reanudación <n>` con `claude` / `opus-5-5-1m` por
+defecto (`--agent`, `--model` y `--workspace` lo cambian). El mensaje retoma el run existente sin
+`--new-run` desde `nextAction`, conserva cambios sin commit y vuelve a pedir permisos como
+LocalReviewer.
+
 ## Qué recibe el workspace
 
 - `--branch <base o rama del padre>`, `--agent`, `--name "[ID] título"`.

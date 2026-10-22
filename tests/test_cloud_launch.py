@@ -1,3 +1,4 @@
+import sys
 import json
 import os
 import subprocess
@@ -363,7 +364,7 @@ class TranscriptPagingTests(unittest.TestCase):
             offset = int(arguments[arguments.index("--offset") + 1])
             calls.append((limit, offset))
             result = type("Result", (), {})()
-            if limit > 10:
+            if limit > 30:
                 result.stdout = '{"data": [{"type": "agent"'  # cut mid-object
             elif offset == 0:
                 result.stdout = json.dumps({"data": [{"type": "agent"}] * limit, "hasMore": True})
@@ -371,11 +372,11 @@ class TranscriptPagingTests(unittest.TestCase):
                 result.stdout = json.dumps({"data": [{"type": "agent"}], "hasMore": False})
             return result
 
-        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+        with patch("issue_delivery_orchestrator.cloud_launch._cli_output", side_effect=lambda a: fake_run(a).stdout):
             transcript = _session_transcript("conductor", "s-1")
 
-        self.assertEqual(len(transcript["data"]), 7)
-        self.assertEqual(calls[:3], [(25, 0), (12, 0), (6, 0)])
+        self.assertEqual(len(transcript["data"]), 26)
+        self.assertEqual(calls[:2], [(50, 0), (25, 0)])
 
     def test_unreadable_page_raises_instead_of_reading_empty(self):
         from issue_delivery_orchestrator.cloud_launch import _session_transcript
@@ -385,7 +386,7 @@ class TranscriptPagingTests(unittest.TestCase):
             result.stdout = "not json"
             return result
 
-        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+        with patch("issue_delivery_orchestrator.cloud_launch._cli_output", side_effect=lambda a: fake_run(a).stdout):
             with self.assertRaisesRegex(OrchestrationError, "unreadable transcript page"):
                 _session_transcript("conductor", "s-1")
 
@@ -441,3 +442,136 @@ class RemoteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloudResumeTests(unittest.TestCase):
+    def test_message_resumes_without_new_run_and_keeps_local_changes(self):
+        from issue_delivery_orchestrator.cloud_launch import resume_message
+
+        message = resume_message("LOG-201")
+
+        self.assertIn("no uses `--new-run`", message)
+        self.assertIn("nextAction", message)
+        self.assertIn("no los descartes", message)
+        self.assertIn("no se heredan", message)
+
+    def test_finds_the_single_active_workspace_by_issue_prefix(self):
+        from issue_delivery_orchestrator.cloud_launch import find_issue_workspace
+
+        listing = {"data": [
+            {"id": "ws-old", "name": "[LOG-201] viejo", "archivedAt": "2026-10-01"},
+            {"id": "ws-1", "name": "[LOG-201] Sales Force", "archivedAt": None},
+            {"id": "ws-2", "name": "[LOG-2010] otra", "archivedAt": None},
+        ]}
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = json.dumps(listing)
+            self.assertEqual(find_issue_workspace("conductor", "LOG-201")["id"], "ws-1")
+
+    def test_ambiguous_workspace_needs_explicit_id(self):
+        from issue_delivery_orchestrator.cloud_launch import find_issue_workspace
+
+        listing = {"data": [
+            {"id": "a", "name": "[LOG-201] uno", "archivedAt": None},
+            {"id": "b", "name": "[LOG-201] dos", "archivedAt": None},
+        ]}
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = json.dumps(listing)
+            with self.assertRaisesRegex(RunBlocked, "Pass --workspace"):
+                find_issue_workspace("conductor", "LOG-201")
+
+    def test_resume_session_uses_claude_opus_and_numbers_itself(self):
+        from issue_delivery_orchestrator.cloud_launch import create_resume_session
+
+        with patch(
+            "issue_delivery_orchestrator.cloud_launch.workspace_sessions",
+            return_value=[{"id": "s-1", "name": "Entrega"}, {"id": "s-2", "name": "Reanudación 1"}],
+        ), patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.stdout = '{"id": "s-3"}'
+            create_resume_session("conductor", "ws-1", "msg", agent="claude", model="opus-5-5-1m")
+
+        arguments = runner.call_args.args[0]
+        self.assertEqual(arguments[arguments.index("--agent") + 1], "claude")
+        self.assertEqual(arguments[arguments.index("--model") + 1], "opus-5-5-1m")
+        self.assertEqual(arguments[arguments.index("--name") + 1], "Reanudación 2")
+        self.assertEqual(runner.call_args.kwargs["input_text"], "msg")
+
+    def test_resume_blocks_while_another_session_is_working(self):
+        from argparse import Namespace
+        from issue_delivery_orchestrator.cli import cloud_resume
+
+        with patch.dict(os.environ, {"CONDUCTOR_IS_LOCAL": ""}), patch(
+            "issue_delivery_orchestrator.cli.conductor_cli", return_value="conductor"
+        ), patch(
+            "issue_delivery_orchestrator.cli.working_sessions",
+            return_value=[{"id": "s-1", "name": "Entrega"}],
+        ):
+            with self.assertRaisesRegex(RunBlocked, "still has working sessions"):
+                cloud_resume(Namespace(issue="LOG-201", workspace="ws-1", agent="claude",
+                                       model="opus-5-5-1m", confirm=True))
+
+
+class CliOutputTests(unittest.TestCase):
+    def test_large_output_is_read_whole_through_a_file(self):
+        from issue_delivery_orchestrator.cloud_launch import _cli_output
+
+        script = "import json,sys; sys.stdout.write(json.dumps({'data': ['x' * 400000]}))"
+        output = _cli_output([sys.executable, "-c", script])
+
+        self.assertEqual(len(json.loads(output)["data"][0]), 400000)
+
+    def test_failure_raises_with_stderr(self):
+        from issue_delivery_orchestrator.cloud_launch import _cli_output
+
+        with self.assertRaisesRegex(OrchestrationError, "boom"):
+            _cli_output([sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"])
+
+
+class MergedBlockerTests(unittest.TestCase):
+    def readiness(self, **kwargs):
+        return delivery_readiness(FakeLinear(issue(**kwargs)), "TS-1", PREFIX)
+
+    def test_blocker_with_merged_pr_no_longer_stacks(self):
+        from issue_delivery_orchestrator.cloud_launch import drop_merged_blockers
+
+        readiness = self.readiness(
+            blockers=(("blocks", "TS-2", "started"), ("blocks", "TS-3", "started")),
+            parent={"identifier": "TS-2", "branchName": "benjamin/ts-2"},
+        )
+
+        def fake_run(arguments, **_):
+            result = type("Result", (), {"returncode": 0})()
+            head = arguments[arguments.index("--head") + 1]
+            result.stdout = '[{"number": 7}]' if head == "benjamin/ts-2" else "[]"
+            return result
+
+        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+            merged = drop_merged_blockers(readiness, Path("."), "test")
+
+        self.assertEqual([item["identifier"] for item in merged], ["TS-2"])
+        self.assertEqual([item["identifier"] for item in readiness["openBlockers"]], ["TS-3"])
+
+    def test_merged_parent_lets_the_slice_start_from_the_base(self):
+        from issue_delivery_orchestrator.cloud_launch import drop_merged_blockers
+
+        readiness = self.readiness(
+            blockers=(("blocks", "TS-2", "started"),),
+            parent={"identifier": "TS-2", "branchName": "benjamin/ts-2"},
+        )
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.returncode = 0
+            runner.return_value.stdout = '[{"number": 7}]'
+            drop_merged_blockers(readiness, Path("."), "test")
+
+        self.assertIsNone(stack_parent_for(readiness, None))
+
+    def test_gh_failure_keeps_the_blocker(self):
+        from issue_delivery_orchestrator.cloud_launch import drop_merged_blockers
+
+        readiness = self.readiness(blockers=(("blocks", "TS-2", "started"),))
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.returncode = 1
+            runner.return_value.stdout = ""
+            drop_merged_blockers(readiness, Path("."), "test")
+
+        self.assertEqual(len(readiness["openBlockers"]), 1)
+

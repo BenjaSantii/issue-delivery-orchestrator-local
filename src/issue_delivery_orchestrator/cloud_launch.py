@@ -4,6 +4,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -111,6 +113,44 @@ def stack_parent_for(readiness: dict[str, Any], explicit: str | None) -> str | N
         f"{readiness['identifier']} is blocked by {names}. Deliver the blockers first or "
         "pass --stack-parent with the branch to stack on."
     )
+
+
+def drop_merged_blockers(
+    readiness: dict[str, Any],
+    repository: Path,
+    target: str,
+) -> list[dict[str, Any]]:
+    """Remove blockers whose branch already has a PR merged into the PR target.
+
+    Linear often keeps a delivered issue open until release, but once its PR is in the
+    target branch the dependent slice must start from that branch, not stack on it.
+    """
+    merged = []
+    still_open = []
+    for blocker in readiness["openBlockers"]:
+        branch = blocker.get("branch") or ""
+        if branch and _pr_merged_into(repository, branch, target):
+            merged.append(blocker)
+        else:
+            still_open.append(blocker)
+    readiness["openBlockers"] = still_open
+    readiness["mergedBlockers"] = merged
+    return merged
+
+
+def _pr_merged_into(repository: Path, branch: str, target: str) -> bool:
+    result = run(
+        ["gh", "pr", "list", "--head", branch, "--base", target, "--state", "merged",
+         "--json", "number", "--limit", "1"],
+        cwd=repository,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        return bool(json.loads(result.stdout or "[]"))
+    except json.JSONDecodeError:
+        return False
 
 
 def build_launch(
@@ -361,12 +401,11 @@ def create_delivery_session(cli: str, workspace_id: str, launch: dict[str, Any])
     return _json_output(run(arguments, input_text=launch["message"]).stdout)
 
 
-TRANSCRIPT_PAGE_SIZE = 25
+TRANSCRIPT_PAGE_SIZE = 50
 
 
 def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
-    # The Conductor CLI truncates large JSON outputs, so pages stay small and shrink
-    # until they parse; a truncated page must never read as an empty transcript.
+    # A truncated page must never read as an empty transcript.
     items: list[Any] = []
     offset = 0
     while True:
@@ -381,10 +420,10 @@ def _session_transcript(cli: str, session_id: str) -> dict[str, Any]:
 def _transcript_page(cli: str, session_id: str, offset: int) -> dict[str, Any]:
     limit = TRANSCRIPT_PAGE_SIZE
     while True:
-        stdout = run(
+        stdout = _cli_output(
             [cli, "session", "message", session_id, "--limit", str(limit),
              "--offset", str(offset), "--json"],
-        ).stdout
+        )
         try:
             page = json.loads(stdout)
         except json.JSONDecodeError:
@@ -395,6 +434,24 @@ def _transcript_page(cli: str, session_id: str, offset: int) -> dict[str, Any]:
             limit = max(1, limit // 2)
             continue
         return page if isinstance(page, dict) else {"data": page}
+
+
+def _cli_output(arguments: list[str]) -> str:
+    """Run the Conductor CLI with stdout redirected to a file.
+
+    Writing to a pipe, the CLI exits before flushing and cuts its output at 128 KiB,
+    so large transcript pages arrive as broken JSON. A regular file receives it whole.
+    """
+    with tempfile.TemporaryFile(mode="w+") as output:
+        result = subprocess.run(
+            arguments, stdout=output, stderr=subprocess.PIPE, text=True, check=False
+        )
+        if result.returncode != 0:
+            raise OrchestrationError(
+                f"{' '.join(arguments[1:4])} failed: {result.stderr.strip() or result.returncode}"
+            )
+        output.seek(0)
+        return output.read()
 
 
 def _assistant_texts(payload: Any) -> list[str]:
@@ -473,3 +530,75 @@ def _normalize_remote(remote: str) -> str:
     value = re.sub(r"^git@([^:]+):", r"https://\1/", value)
     value = re.sub(r"^ssh://git@", "https://", value)
     return value.removesuffix(".git").rstrip("/")
+
+
+RESUME_AGENT = "claude"
+RESUME_MODEL = "opus-5-5-1m"
+
+
+def resume_message(identifier: str) -> str:
+    return (
+        f"Reanuda la entrega de {identifier} con Issue Delivery Orchestrator. Una sesión anterior "
+        "de este workspace se detuvo (por ejemplo por límite de uso) y no tienes su conversación.\n\n"
+        "1. Comprueba que el plugin `issue-delivery-orchestrator-local` esté cargado en esta "
+        "sesión; si no aparece, detente y dilo.\n"
+        "2. Inicia el orquestador (Claude Code: "
+        "`/issue-delivery-orchestrator-local:issue-delivery-orchestrator`; Codex: "
+        f"`$issue-delivery-orchestrator`) para {identifier} con `--worktree` igual a la raíz de este "
+        "checkout. Es un run existente: **no uses `--new-run`**. El motor devuelve "
+        "`resumed: true`, la fase actual y `nextAction`; si el run quedó `blocked`, usa la acción "
+        "`resume` del motor.\n"
+        "3. Antes de seguir, revisa `git status` y `git log` contra el estado del run: cambios sin "
+        "commit pueden ser trabajo a medias de la sesión anterior. Consérvalos y reconcílialos con "
+        "el ticket en curso; no los descartes sin decírmelo.\n"
+        "4. Relee el spec, los tickets y la issue en Linear con `read-linear-issue` y continúa desde "
+        "`nextAction`. Los permisos que di en la sesión anterior (por ejemplo LocalReviewer) no se "
+        "heredan: pídelos de nuevo cuando corresponda.\n"
+    )
+
+
+def find_issue_workspace(cli: str, identifier: str) -> dict[str, Any]:
+    listing = _json_output(
+        run([cli, "workspace", "list", "--mine", "--name", f"[{identifier}]",
+             "--limit", "20", "--json"]).stdout
+    )
+    matches = [
+        item for item in (listing.get("data") or [])
+        if str(item.get("name") or "").startswith(f"[{identifier}]") and not item.get("archivedAt")
+    ]
+    if len(matches) != 1:
+        raise RunBlocked(
+            f"Expected one active Conductor workspace named [{identifier}], found "
+            f"{len(matches)}. Pass --workspace."
+        )
+    return matches[0]
+
+
+def working_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
+    busy = []
+    for session in workspace_sessions(cli, workspace_id):
+        status = _json_output(
+            run([cli, "session", "status", str(session["id"]), "--json"]).stdout
+        ).get("status")
+        if status == "working":
+            busy.append({"id": session["id"], "name": session.get("name")})
+    return busy
+
+
+def create_resume_session(
+    cli: str,
+    workspace_id: str,
+    message: str,
+    *,
+    agent: str,
+    model: str | None,
+) -> dict[str, Any]:
+    existing = workspace_sessions(cli, workspace_id)
+    count = sum(1 for item in existing if str(item.get("name") or "").startswith("Reanudación"))
+    arguments = [cli, "session", "create", "--workspace", workspace_id, "--agent", agent,
+                 "--name", f"Reanudación {count + 1}"]
+    if model:
+        arguments += ["--model", model]
+    arguments += ["--message-file", "-", "--json"]
+    return _json_output(run(arguments, input_text=message).stdout)
+

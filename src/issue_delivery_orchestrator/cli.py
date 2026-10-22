@@ -14,9 +14,16 @@ from .cloud_launch import (
     build_launch,
     conductor_cli,
     conductor_project_id,
+    RESUME_AGENT,
+    RESUME_MODEL,
     create_delivery_session,
+    create_resume_session,
     create_workspace,
+    find_issue_workspace,
+    resume_message,
+    working_sessions,
     delivery_readiness,
+    drop_merged_blockers,
     first_session_id,
     stack_parent_for,
     wait_for_bootstrap,
@@ -150,6 +157,18 @@ def parser() -> argparse.ArgumentParser:
         "--confirm",
         action="store_true",
         help="Create the workspace; without it the command only prints the plan",
+    )
+    resume_cloud = actions.add_parser(
+        "cloud-resume",
+        help="Start a fresh session in the issue's Conductor workspace that resumes its run",
+    )
+    resume_cloud.add_argument("--workspace", help="Conductor workspace ID")
+    resume_cloud.add_argument("--agent", default=RESUME_AGENT, choices=("claude", "codex"))
+    resume_cloud.add_argument("--model", default=RESUME_MODEL)
+    resume_cloud.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Create the session; without it the command only prints the plan",
     )
     cloud.add_argument(
         "--workspace",
@@ -304,6 +323,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return read_linear_issue(args.issue)
     if args.action == "cloud-launch":
         return cloud_launch(args)
+    if args.action == "cloud-resume":
+        return cloud_resume(args)
 
     configuration = settings()
     repository = _repository(args.worktree, configuration.repository)
@@ -491,6 +512,35 @@ def read_linear_issue(identifier_or_url: str) -> dict[str, Any]:
     }
 
 
+def cloud_resume(args: argparse.Namespace) -> dict[str, Any]:
+    if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
+        raise RunBlocked("cloud-resume runs from your machine, not inside a cloud workspace")
+    identifier = normalize_issue_identifier(args.issue)
+    cli = conductor_cli()
+    workspace_id = args.workspace or find_issue_workspace(cli, identifier)["id"]
+    busy = working_sessions(cli, workspace_id)
+    if busy:
+        names = ", ".join(f"{item['name']} ({item['id']})" for item in busy)
+        raise RunBlocked(
+            f"Workspace {workspace_id} still has working sessions: {names}. Cancel them with "
+            "conductor session cancel before resuming, so two agents do not share the worktree."
+        )
+    message = resume_message(identifier)
+    plan = {
+        "workspaceId": workspace_id,
+        "agent": args.agent,
+        "model": args.model,
+        "message": message,
+        "created": False,
+    }
+    if not args.confirm:
+        return plan
+    session = create_resume_session(
+        cli, workspace_id, message, agent=args.agent, model=args.model
+    )
+    return {**plan, "created": True, "session": session}
+
+
 def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
     if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
         raise RunBlocked("cloud-launch runs from your machine, not inside a cloud workspace")
@@ -507,6 +557,8 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
     readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
     if readiness["problems"]:
         raise RunBlocked("; ".join(readiness["problems"]))
+    if not args.stack_parent:
+        drop_merged_blockers(readiness, repository, configuration.pr_target_branch)
     stack_parent = stack_parent_for(readiness, args.stack_parent)
     cli = conductor_cli()
     project_id = args.conductor_project or conductor_project_id(cli, repository)
