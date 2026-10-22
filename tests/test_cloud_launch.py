@@ -525,3 +525,53 @@ class CliOutputTests(unittest.TestCase):
         with self.assertRaisesRegex(OrchestrationError, "boom"):
             _cli_output([sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"])
 
+
+class MergedBlockerTests(unittest.TestCase):
+    def readiness(self, **kwargs):
+        return delivery_readiness(FakeLinear(issue(**kwargs)), "TS-1", PREFIX)
+
+    def test_blocker_with_merged_pr_no_longer_stacks(self):
+        from issue_delivery_orchestrator.cloud_launch import drop_merged_blockers
+
+        readiness = self.readiness(
+            blockers=(("blocks", "TS-2", "started"), ("blocks", "TS-3", "started")),
+            parent={"identifier": "TS-2", "branchName": "benjamin/ts-2"},
+        )
+
+        def fake_run(arguments, **_):
+            result = type("Result", (), {"returncode": 0})()
+            head = arguments[arguments.index("--head") + 1]
+            result.stdout = '[{"number": 7}]' if head == "benjamin/ts-2" else "[]"
+            return result
+
+        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+            merged = drop_merged_blockers(readiness, Path("."), "test")
+
+        self.assertEqual([item["identifier"] for item in merged], ["TS-2"])
+        self.assertEqual([item["identifier"] for item in readiness["openBlockers"]], ["TS-3"])
+
+    def test_merged_parent_lets_the_slice_start_from_the_base(self):
+        from issue_delivery_orchestrator.cloud_launch import drop_merged_blockers
+
+        readiness = self.readiness(
+            blockers=(("blocks", "TS-2", "started"),),
+            parent={"identifier": "TS-2", "branchName": "benjamin/ts-2"},
+        )
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.returncode = 0
+            runner.return_value.stdout = '[{"number": 7}]'
+            drop_merged_blockers(readiness, Path("."), "test")
+
+        self.assertIsNone(stack_parent_for(readiness, None))
+
+    def test_gh_failure_keeps_the_blocker(self):
+        from issue_delivery_orchestrator.cloud_launch import drop_merged_blockers
+
+        readiness = self.readiness(blockers=(("blocks", "TS-2", "started"),))
+        with patch("issue_delivery_orchestrator.cloud_launch.run") as runner:
+            runner.return_value.returncode = 1
+            runner.return_value.stdout = ""
+            drop_merged_blockers(readiness, Path("."), "test")
+
+        self.assertEqual(len(readiness["openBlockers"]), 1)
+

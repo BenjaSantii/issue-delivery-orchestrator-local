@@ -115,6 +115,44 @@ def stack_parent_for(readiness: dict[str, Any], explicit: str | None) -> str | N
     )
 
 
+def drop_merged_blockers(
+    readiness: dict[str, Any],
+    repository: Path,
+    target: str,
+) -> list[dict[str, Any]]:
+    """Remove blockers whose branch already has a PR merged into the PR target.
+
+    Linear often keeps a delivered issue open until release, but once its PR is in the
+    target branch the dependent slice must start from that branch, not stack on it.
+    """
+    merged = []
+    still_open = []
+    for blocker in readiness["openBlockers"]:
+        branch = blocker.get("branch") or ""
+        if branch and _pr_merged_into(repository, branch, target):
+            merged.append(blocker)
+        else:
+            still_open.append(blocker)
+    readiness["openBlockers"] = still_open
+    readiness["mergedBlockers"] = merged
+    return merged
+
+
+def _pr_merged_into(repository: Path, branch: str, target: str) -> bool:
+    result = run(
+        ["gh", "pr", "list", "--head", branch, "--base", target, "--state", "merged",
+         "--json", "number", "--limit", "1"],
+        cwd=repository,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        return bool(json.loads(result.stdout or "[]"))
+    except json.JSONDecodeError:
+        return False
+
+
 def build_launch(
     readiness: dict[str, Any],
     configuration: Settings,

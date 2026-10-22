@@ -23,6 +23,7 @@ from .cloud_launch import (
     resume_message,
     working_sessions,
     delivery_readiness,
+    drop_merged_blockers,
     first_session_id,
     stack_parent_for,
     wait_for_bootstrap,
@@ -556,6 +557,8 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
     readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
     if readiness["problems"]:
         raise RunBlocked("; ".join(readiness["problems"]))
+    if not args.stack_parent:
+        drop_merged_blockers(readiness, repository, configuration.pr_target_branch)
     stack_parent = stack_parent_for(readiness, args.stack_parent)
     cli = conductor_cli()
     project_id = args.conductor_project or conductor_project_id(cli, repository)
