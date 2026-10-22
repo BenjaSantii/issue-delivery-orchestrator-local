@@ -19,6 +19,7 @@ from .state import run_root
 from .util import ensure_within, read_json, run
 from .fresh_qa import validate_session
 from .qa_persistence import validate_persistence
+from .run_evidence import read_notes, story_images
 
 QA_HEADING = "## QA Script"
 QA_HEADER = (
@@ -199,6 +200,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
     if missing:
         raise OrchestrationError(f"QA results are missing cases: {', '.join(missing)}")
 
+    notes = read_notes(state)
     failing = []
     normalized = []
     for qa_id, case in expected.items():
@@ -206,7 +208,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
         status = str(item.get("status") or "")
         if status not in RESULT_STATUSES:
             raise OrchestrationError(f"{qa_id} has invalid status {status or '<empty>'}")
-        summary = str(item.get("summary") or "").strip()
+        summary = str(item.get("summary") or notes.get(qa_id) or "").strip()
         if not summary:
             raise OrchestrationError(f"{qa_id} needs a summary of what was observed")
         _reject_secrets(qa_id, summary)
@@ -235,14 +237,19 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
                 "userInstruction": str(waiver["userInstruction"]).strip(),
             }
         if status == "PASS":
+            screenshots = item.get("screenshots") or [
+                str(path.resolve().relative_to(worktree.resolve()))
+                for path in story_images(state, qa_id)
+            ]
             entry["screenshots"] = [
                 str(_run_file(root, worktree, raw, qa_id, suffixes={".png"}))
-                for raw in item.get("screenshots") or []
+                for raw in screenshots
             ]
             if case["Surface"] == "UI" and not entry["screenshots"]:
                 raise OrchestrationError(f"{qa_id} is a UI case and needs at least one screenshot")
-            if item.get("output"):
-                output = _run_file(root, worktree, item["output"], qa_id)
+            output_file = item.get("output") or _default_output(root, worktree, qa_id)
+            if output_file:
+                output = _run_file(root, worktree, output_file, qa_id)
                 _reject_secrets(qa_id, (worktree / output).read_text(errors="replace"))
                 entry["output"] = str(output)
             elif case["Surface"] != "UI":
@@ -284,6 +291,39 @@ def qa_comment_body(
     asset_urls: dict[str, str],
     worktree: Path,
 ) -> str:
+    sections = _qa_summary(run_id, results)
+    for case in results["cases"]:
+        details = _case_details(case, asset_urls, worktree)
+        if details:
+            sections += ["", f"#### {case['id']}", "", *details]
+    return "\n".join(sections) + "\n"
+
+
+def qa_github_comment_body(
+    run_id: str,
+    results: dict[str, Any],
+    worktree: Path,
+    linear_url: str,
+) -> str:
+    sections = _qa_summary(run_id, results)
+    if linear_url:
+        sections += ["", f"Detalle completo y capturas en [Linear]({linear_url})."]
+    for case in results["cases"]:
+        details = _case_details(case, {}, worktree)
+        if details:
+            sections += [
+                "",
+                "<details>",
+                f"<summary>{case['id']}: detalle</summary>",
+                "",
+                *details,
+                "",
+                "</details>",
+            ]
+    return "\n".join(sections) + "\n"
+
+
+def _qa_summary(run_id: str, results: dict[str, Any]) -> list[str]:
     rows = []
     for case in results["cases"]:
         icon = {"PASS": "✅", "WAIVED": "⚪"}.get(case["status"], "❌")
@@ -292,7 +332,7 @@ def qa_comment_body(
             f"| {case['id']} | {case['type']} | {case['surface']} | {case['covers']} "
             f"| {icon} {case['status']} | {summary} |"
         )
-    sections = [
+    return [
         f"### {qa_comment_marker(run_id)}",
         "",
         f"Commit `{results['verifiedCommit'][:12]}` · runtime `{results['runtimeId']}`",
@@ -301,33 +341,45 @@ def qa_comment_body(
         "| -- | -- | -- | -- | -- | -- |",
         *rows,
     ]
-    for case in results["cases"]:
-        details = []
-        for screenshot in case["screenshots"]:
-            url = asset_urls.get(screenshot)
-            if url:
-                details.append(f"![{case['id']}]({url})")
-        if case["output"]:
-            lines = (worktree / case["output"]).read_text(errors="replace").splitlines()
-            excerpt = "\n".join(lines[:OUTPUT_EXCERPT_LINES])
-            more = "\n…" if len(lines) > OUTPUT_EXCERPT_LINES else ""
-            details.append(f"```\n{excerpt}{more}\n```")
-        if case.get("waiver"):
-            details.append(
-                f"Excepción aprobada por el usuario: {case['waiver']['reason']} "
-                f"(«{case['waiver']['userInstruction']}»)"
-            )
-        persistence = case.get("persistence") or {}
-        if persistence:
-            details.append(f"Persistencia: {persistence['status']} — "
-                           f"{persistence.get('expectation') or persistence.get('reason')}")
-            for key in ("before", "after"):
-                if persistence.get(key):
-                    excerpt = "\n".join((worktree / persistence[key]).read_text().splitlines()[:OUTPUT_EXCERPT_LINES])
-                    details.append(f"DB {key}:\n```json\n{excerpt}\n```")
-        if details:
-            sections += ["", f"#### {case['id']}", "", *details]
-    return "\n".join(sections) + "\n"
+
+
+def _case_details(
+    case: dict[str, Any],
+    asset_urls: dict[str, str],
+    worktree: Path,
+) -> list[str]:
+    details = []
+    for screenshot in case["screenshots"]:
+        url = asset_urls.get(screenshot)
+        if url:
+            details.append(f"![{case['id']}]({url})")
+    if case["output"]:
+        lines = (worktree / case["output"]).read_text(errors="replace").splitlines()
+        excerpt = "\n".join(lines[:OUTPUT_EXCERPT_LINES])
+        more = "\n…" if len(lines) > OUTPUT_EXCERPT_LINES else ""
+        details.append(f"```\n{excerpt}{more}\n```")
+    if case.get("waiver"):
+        details.append(
+            f"Excepción aprobada por el usuario: {case['waiver']['reason']} "
+            f"(«{case['waiver']['userInstruction']}»)"
+        )
+    persistence = case.get("persistence") or {}
+    if persistence:
+        details.append(f"Persistencia: {persistence['status']} — "
+                       f"{persistence.get('expectation') or persistence.get('reason')}")
+        for key in ("before", "after"):
+            if persistence.get(key):
+                excerpt = "\n".join((worktree / persistence[key]).read_text().splitlines()[:OUTPUT_EXCERPT_LINES])
+                details.append(f"DB {key}:\n```json\n{excerpt}\n```")
+    return details
+
+
+def _default_output(root: Path, worktree: Path, qa_id: str) -> str | None:
+    for suffix in (".txt", ".json"):
+        path = root / "validation" / "qa" / f"{qa_id}{suffix}"
+        if path.is_file():
+            return str(path.resolve().relative_to(worktree.resolve()))
+    return None
 
 
 def qa_comment_marker(run_id: str) -> str:

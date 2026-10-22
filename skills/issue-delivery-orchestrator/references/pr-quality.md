@@ -74,8 +74,9 @@ restante tiene `SKIP` con motivo. Registrar con `record-pre-review --receipt <ru
 ## 3. Bloque de validación en la PR
 
 Escribir `<run-root>/validation/pr-validation.md` sólo con resultados reales del HEAD pusheado y
-publicarlo con `publish-validation --receipt <ruta>`. El motor lo inserta entre marcadores dentro
-del body; ejecutar nuevamente después de cada push.
+publicarlo con `publish-run`. El motor lo inserta entre marcadores dentro del body; ejecutar
+nuevamente después de cada push. Una línea por check con resultado y conteo, sin logs: el detalle
+vive en Linear.
 
 ```markdown
 ## Validación

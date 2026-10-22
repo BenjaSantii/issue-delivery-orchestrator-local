@@ -27,6 +27,7 @@ from .credentials import CredentialProvider
 from .errors import IdentityMismatch, OrchestrationError, RunBlocked
 from .evidence import prepare_evidence, publish_evidence, repair_github_evidence
 from .git_workspace import GitWorkspace
+from .run_evidence import ui_manifest, validation_dir
 from .github import GitHubClient
 from .spec_lint import assert_spec_publishable
 from .slicing import assert_size_accepted, record_decision, record_estimate, size_check
@@ -47,6 +48,7 @@ from .pr_quality import (
 from .qa_script import (
     approved_qa_cases,
     qa_comment_body,
+    qa_github_comment_body,
     qa_comment_marker,
     validate_qa_results,
 )
@@ -208,6 +210,12 @@ def parser() -> argparse.ArgumentParser:
         help="Validate QA results against the approved QA Script and publish them",
     )
     qa.add_argument("--results", type=Path, required=True)
+
+    publish_run_parser = actions.add_parser(
+        "publish-run",
+        help="Publish the run's validation folder: UI evidence, QA results and PR validation",
+    )
+    publish_run_parser.add_argument("--runtime")
 
     evidence = actions.add_parser("publish-evidence")
     evidence.add_argument("--manifest", type=Path, required=True)
@@ -419,6 +427,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return publish_linear_block(state, args.block, args.body_file)
     if args.action == "publish-qa-results":
         return publish_qa_results(state, args.results)
+    if args.action == "publish-run":
+        return publish_run(state, args.runtime)
     if args.action == "publish-evidence":
         linear, _ = _verified_linear()
         github = GitHubClient(Path(state["worktree"]))
@@ -884,9 +894,10 @@ def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, A
         github = GitHubClient(worktree)
         github.verify_identity()
         marker = f"<!-- issue-delivery-qa:{state['runId']} -->"
+        github_body = qa_github_comment_body(state["runId"], results, worktree, issue.url)
         github_target = {
             "commentId": github.upsert_comment(
-                int(state["pr"]["number"]), marker, f"{marker}\n{body}"
+                int(state["pr"]["number"]), marker, f"{marker}\n{github_body}"
             )
         }
 
@@ -899,6 +910,38 @@ def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, A
     }
     save_state(state)
     return {"published": True, "qa": state["qa"]}
+
+
+def publish_run(state: dict[str, Any], runtime_id: str | None) -> dict[str, Any]:
+    worktree = Path(state["worktree"])
+    folder = validation_dir(state)
+    result: dict[str, Any] = {"uiManifest": None, "uiImages": 0, "qa": None, "validation": None}
+    manifest = ui_manifest(state, runtime_id)
+    if manifest:
+        linear, _ = _verified_linear()
+        github = None
+        if state.get("pr"):
+            github = GitHubClient(worktree)
+            github.verify_identity()
+        receipt = publish_evidence(
+            state,
+            manifest,
+            linear=linear,
+            github=github,
+            comments_enabled=settings().linear_comments_enabled,
+        )
+        result["uiManifest"] = str(manifest.resolve().relative_to(worktree.resolve()))
+        result["uiImages"] = len(receipt["assets"])
+        result["linearIssue"] = receipt["linearIssue"]
+    qa_results = folder / "qa-results.json"
+    if qa_results.is_file() and approved_qa_cases(state) is not None:
+        result["qa"] = publish_qa_results(state, qa_results)["qa"]["cases"]
+    validation = folder / "pr-validation.md"
+    if validation.is_file() and state.get("pr"):
+        github = GitHubClient(worktree)
+        github.verify_identity()
+        result["validation"] = publish_validation(state, validation, github)["sha"]
+    return result
 
 
 def _require_published_qa(state: dict[str, Any], results_artifact: str | None) -> None:

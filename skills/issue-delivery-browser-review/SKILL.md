@@ -84,48 +84,11 @@ estado final de la branch. Prohibir el handoff mientras exista `FAIL` o `BLOCKED
 
 Leer
 [evidence-annotations.md](../issue-delivery-orchestrator/references/evidence-annotations.md).
-Conservar únicamente PNG del estado final aceptado y generar evidencia v2. Obtener los bounds desde
-el mismo estado DOM/visual de la captura; no adivinarlos desde otra observación. Ejecutar
-`prepare-evidence` e inspeccionar el PNG anotado antes de devolver PASS.
+Guardar en `validation/ui/` sólo PNG del estado final aceptado, con nombre
+`<ID>-<NN>-<slug>.png`, y escribir en `validation/notes.md` una línea `<ID>: qué demuestra` por
+historia. No escribir el manifiesto: lo genera `publish-run`. Incluir una captura por punto visual
+relevante, sin secretos, estados fallidos intermedios ni duplicados.
 
-Generar:
-
-```json
-{
-  "evidenceVersion": 2,
-  "verification": {
-    "status": "PASS",
-    "provider": "codex-browser",
-    "verifiedCommit": "<sha>",
-    "runtimeId": "<runtime-id>",
-    "verifiedAt": "<ISO-8601>",
-    "scenarioIds": ["REPAIR-1"]
-  },
-  "headlessAssistance": [
-    {
-      "storyId": "US-001",
-      "kind": "hover",
-      "receiptPath": ".local-runtime/issue-delivery-orchestrator/<run-id>/validation/headless-assistance/US-001/receipt.json"
-    }
-  ],
-  "screenshots": [
-    {
-      "storyId": "US-1",
-      "title": "Descripción del estado",
-      "caption": "Criterio demostrado",
-      "path": ".local-runtime/issue-delivery-orchestrator/<run-id>/validation/ui/US-1.png",
-      "callouts": [
-        {
-          "kind": "highlight",
-          "caption": "Elemento nuevo verificado",
-          "bounds": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}
-        }
-      ]
-    }
-  ]
-}
-```
-
-Incluir al menos una captura por punto visual relevante, sin secretos ni estados fallidos
-intermedios. Usar `annotationReason` sólo cuando el cambio sea global y una región localizada
-resultaría engañosa.
+Callouts sólo cuando el caption no baste, con bounds del mismo estado DOM/visual de la captura.
+Si hubo asistencia headless, escribir el manifiesto manual con `headlessAssistance` según la
+referencia.

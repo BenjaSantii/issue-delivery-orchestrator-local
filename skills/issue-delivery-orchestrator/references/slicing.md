@@ -96,4 +96,4 @@ historias; un slice sin UI usa evidencia `TEST` o `API_COMMAND`.
   cambia la base de la PR a la target y registra el HEAD anterior para deshacer. Ejecutarlo
   después de cada push de convergencia del padre y después de su merge. Ante conflicto aborta y
   deja la rama intacta: resolver con el usuario.
-- Después de un `restack` con push, repetir `publish-validation` sobre el nuevo HEAD.
+- Después de un `restack` con push, repetir `publish-run` sobre el nuevo HEAD.

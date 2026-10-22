@@ -75,6 +75,12 @@ def decode_png(payload: bytes) -> PngImage:
     return PngImage(width, height, pixels)
 
 
+def png_size(payload: bytes) -> tuple[int, int]:
+    if payload[12:16] != b"IHDR":
+        raise ValueError("PNG must start with an IHDR chunk")
+    return struct.unpack(">II", payload[16:24])
+
+
 def encode_png(image: PngImage) -> bytes:
     row_size = image.width * 4
     if len(image.pixels) != row_size * image.height:

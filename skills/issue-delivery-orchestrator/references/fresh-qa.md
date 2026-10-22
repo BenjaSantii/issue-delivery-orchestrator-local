@@ -102,7 +102,7 @@ se construye con el destino del runtime y el resultado observado de la consulta 
 Para un caso sin DB: `"persistence": {"status": "NOT_APPLICABLE", "reason": "Sólo cambia el espaciado"}`.
 No se acepta esta excepción en concurrencia ni cuando el guion marca Evidence con DB.
 
-El controlador consume los archivos, publica con publish-qa-results y completa el checkpoint.
+El controlador consume los archivos, publica con `publish-run` y completa el checkpoint.
 Se rechazan resultados del implementador, de otro reviewer, de otro runtime/commit/contrato o
 con estado persistido distinto del esperado. El motor valida el recibo y los artefactos; la
 ejecución real de las queries y la procedencia del contexto nativo se auditan con la sesión del

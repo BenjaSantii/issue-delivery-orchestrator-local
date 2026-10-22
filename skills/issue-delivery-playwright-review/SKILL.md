@@ -83,38 +83,12 @@ handoff mientras exista `FAIL` o `BLOCKED`.
 
 Leer
 [evidence-annotations.md](../issue-delivery-orchestrator/references/evidence-annotations.md).
-Conservar únicamente PNG del estado final aceptado, obtener los bounds del mismo estado de la
-captura (`locator.boundingBox()` dividido por el viewport) y generar:
+Guardar en `validation/ui/` sólo PNG del estado final aceptado, con nombre
+`<ID>-<NN>-<slug>.png`, y escribir en `validation/notes.md` una línea `<ID>: qué demuestra` por
+historia. No escribir el manifiesto: lo genera `publish-run`. Incluir una captura por punto visual
+relevante, sin secretos, estados fallidos intermedios ni duplicados.
 
-```json
-{
-  "evidenceVersion": 2,
-  "verification": {
-    "status": "PASS",
-    "provider": "playwright",
-    "verifiedCommit": "<sha>",
-    "runtimeId": "<runtime-id>",
-    "verifiedAt": "<ISO-8601>",
-    "scenarioIds": ["US-1"]
-  },
-  "screenshots": [
-    {
-      "storyId": "US-1",
-      "title": "Descripción del estado",
-      "caption": "Criterio demostrado (viewport 1280×800)",
-      "path": ".local-runtime/issue-delivery-orchestrator/<run-id>/validation/ui/US-1.png",
-      "callouts": [
-        {
-          "kind": "highlight",
-          "caption": "Elemento nuevo verificado",
-          "bounds": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}
-        }
-      ]
-    }
-  ]
-}
-```
-
-Incluir en ese manifiesto las capturas que devuelva `mobile-web-reviewer`. Ejecutar
-`prepare-evidence` e inspeccionar el PNG anotado antes de devolver PASS. `headlessAssistance` no
-aplica: Playwright ya es el reviewer.
+Indicar el viewport en la nota cuando importe (por ejemplo 390×844). Callouts sólo cuando el
+caption no baste, con bounds de `locator.boundingBox()` divididos por el viewport. Guardar ahí
+también las capturas que devuelva `mobile-web-reviewer`. `headlessAssistance` no aplica: Playwright
+ya es el reviewer.

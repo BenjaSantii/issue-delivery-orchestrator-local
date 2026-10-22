@@ -304,9 +304,11 @@ python3 scripts/issue-delivery --help
 All run memory, receipts, logs, screenshots, and browser profiles are written under the ignored
 runtime directory inside the adopted worktree. Product commits contain only product changes.
 
-Final UI evidence uses deterministic numbered callouts to highlight the changed or relevant
-regions. The annotated PNG is shown in Linear and GitHub while the untouched original remains
-available through an audit link. Global changes can explicitly omit a localized callout.
+Validation evidence lives in the run's `validation/` folder: screenshots named
+`<ID>-<NN>-<slug>.png`, command outputs named `<QA-ID>.txt`, and one note per story in `notes.md`.
+`publish-run` builds the manifest from those names, uploads everything to Linear, and posts a
+compact PR comment with one screenshot per story, the rest collapsed, and a link to Linear.
+Numbered callouts are optional and only needed when a caption is not enough.
 
 In Codex mode, Browser remains the primary reviewer. If Browser demonstrably cannot operate a real
 file input or activate a required CSS hover state, only the affected story may use the target

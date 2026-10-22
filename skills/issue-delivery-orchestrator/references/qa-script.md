@@ -128,6 +128,9 @@ Guardar `validation/qa-results.json` dentro del run:
 
 - `status`: `PASS`, `FAIL`, `BLOCKED` o `WAIVED`.
 - `PASS` de un caso `UI` exige al menos una captura; de `API` o `command`, su archivo de salida.
+- `screenshots`, `output` y `summary` son opcionales: si faltan, el motor usa
+  `validation/ui/<QA-ID>*.png`, `validation/qa/<QA-ID>.txt|.json` y la línea `<QA-ID>:` de
+  `validation/notes.md`.
 - `FAIL` y `BLOCKED` impiden cerrar la revisión manual: reparar con `issue-delivery-implement`,
   invalidar sólo los casos afectados y repetirlos.
 - `WAIVED` sólo cuando el usuario decide explícitamente no exigir ese caso. Pedirlo en el chat
@@ -136,17 +139,16 @@ Guardar `validation/qa-results.json` dentro del run:
 ## Publicar
 
 ```bash
-python3 <plugin-root>/scripts/issue-delivery <issue> publish-qa-results \
-  --results .local-runtime/issue-delivery-orchestrator/<run-id>/validation/qa-results.json
+python3 <plugin-root>/scripts/issue-delivery <issue> publish-run
 ```
 
-Valida el archivo contra el guion aprobado, sube las capturas a Linear y crea o actualiza un
-comentario `Resultado QA — <run-id>` con la tabla de casos, las imágenes y un extracto de cada
-salida. Con `LINEAR_COMMENTS_ENABLED=false` escribe el mismo contenido en un bloque `qa-results`
-de la descripción. Si la PR ya existe, también actualiza un comentario en ella.
+Valida `qa-results.json` contra el guion aprobado y sube capturas y salidas a Linear en un
+comentario `Resultado QA — <run-id>`. En la PR deja la tabla de casos, el detalle colapsado y un
+link a Linear. Con `LINEAR_COMMENTS_ENABLED=false` escribe el mismo contenido en un bloque
+`qa-results` de la descripción.
 
-Publicar antes de cerrar la revisión manual, y volver a ejecutar el comando después de crear la
-PR para que el resultado quede también en ella. El checkpoint exige el artefacto:
+Publicar antes de cerrar la revisión manual y otra vez después de crear la PR. El checkpoint exige
+el artefacto:
 
 ```bash
 python3 <plugin-root>/scripts/issue-delivery <issue> checkpoint --phase manual-revision \
