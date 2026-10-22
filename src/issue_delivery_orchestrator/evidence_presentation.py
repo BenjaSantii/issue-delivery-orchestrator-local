@@ -4,6 +4,9 @@ from typing import Any
 
 from .errors import OrchestrationError
 
+PHONE_WIDTH = 300
+DESKTOP_WIDTH = 720
+
 
 def linear_run_section(run_id: str, assets: list[dict[str, Any]]) -> str:
     items = []
@@ -41,7 +44,7 @@ def pr_body(
             original_url=asset.get("githubOriginalUrl"),
         )
         stories.setdefault(asset["storyId"], []).append(
-            f"![{asset['title']}]({github_url}){caption}"
+            f"{_image(asset['title'], github_url, asset)}{caption}"
         )
         titles.setdefault(asset["storyId"], asset["title"])
     items = []
@@ -97,6 +100,15 @@ def pr_body(
         f"{linear_notice}\n\n"
         + "\n\n".join(items)
     )
+
+
+def _image(title: str, url: str, asset: dict[str, Any]) -> str:
+    width, height = asset.get("width"), asset.get("height")
+    if not width or not height:
+        return f"![{title}]({url})"
+    display = PHONE_WIDTH if height > width else min(width, DESKTOP_WIDTH)
+    alt = title.replace('"', "&quot;")
+    return f'<img src="{url}" alt="{alt}" width="{display}">'
 
 
 def _asset_caption(asset: dict[str, Any], *, original_url: str | None) -> str:

@@ -217,8 +217,10 @@ class EvidenceVerificationTests(unittest.TestCase):
             "<!-- marker -->",
             [
                 {"storyId": "US-1", "title": "Main", "githubUrl": "../main.png"},
-                {"storyId": "US-1", "title": "Detail", "githubUrl": "../detail.png"},
-                {"storyId": "US-2", "title": "Other", "githubUrl": "../other.png"},
+                {"storyId": "US-1", "title": "Detail", "githubUrl": "../detail.png",
+                 "width": 1170, "height": 2532},
+                {"storyId": "US-2", "title": "Other", "githubUrl": "../other.png",
+                 "width": 1440, "height": 1000},
             ],
             linear_url="https://linear.app/ts/issue/TS-1",
         )
@@ -227,6 +229,8 @@ class EvidenceVerificationTests(unittest.TestCase):
         self.assertNotIn("### US-1 — Detail", body)
         self.assertIn("<summary>Más capturas de US-1 (1)</summary>", body)
         self.assertLess(body.index("<details>"), body.index("../detail.png"))
+        self.assertIn('<img src="../detail.png" alt="Detail" width="300">', body)
+        self.assertIn('<img src="../other.png" alt="Other" width="720">', body)
         self.assertIn("### US-2 — Other", body)
         self.assertIn("[Linear](https://linear.app/ts/issue/TS-1)", body)
 

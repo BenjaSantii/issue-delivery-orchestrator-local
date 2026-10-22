@@ -8,6 +8,7 @@ from typing import Any
 
 from .github import GitHubClient
 from .linear import LinearClient
+from .png_codec import png_size
 
 
 def fingerprint(
@@ -39,8 +40,11 @@ def upload_linear_asset(
         if screenshot["callouts"]
         else display_url
     )
+    width, height = png_size(screenshot["displayPath"].read_bytes())
     return {
         "storyId": screenshot["storyId"],
+        "width": width,
+        "height": height,
         "publishToGithub": screenshot.get("publishToGithub", True),
         "title": screenshot["title"],
         "caption": screenshot["caption"],
