@@ -132,7 +132,16 @@ class FreshQATests(unittest.TestCase):
     def test_does_not_guess_missing_or_unknown_calling_chat_configuration(self):
         catalog = {"agents": [{"agent": "codex", "models": ["gpt-6.1-sol"], "efforts": ["high"]}]}
         with patch("issue_delivery_orchestrator.fresh_qa.run", return_value=SimpleNamespace(stdout=json.dumps(catalog))):
-            for caller in ({}, {"model": "gpt-6.1-sol"}, {"model": "unknown", "effort": "high"},
+            for caller in ({}, {"model": "gpt-6.1-sol"}, {"effort": "high"}, {"model": "unknown", "effort": "high"},
                            {"model": "gpt-6.1-sol", "effort": "unknown"}):
                 with self.subTest(caller=caller), self.assertRaises(RunBlocked):
                     fresh_qa.caller_configuration("conductor", caller)
+
+    def test_unset_effort_uses_the_agent_default_conductor_runs(self):
+        catalog = {"agents": [{"agent": "claude", "models": ["opus-5-5-1m"], "efforts": ["high", "max"],
+                               "defaultEffort": "high"}]}
+        with patch("issue_delivery_orchestrator.fresh_qa.run", return_value=SimpleNamespace(stdout=json.dumps(catalog))):
+            for effort in (None, ""):
+                with self.subTest(effort=effort):
+                    self.assertEqual(fresh_qa.caller_configuration("conductor", {"model": "opus-5-5-1m", "effort": effort}),
+                                     {"agent": "claude", "model": "opus-5-5-1m", "effort": "high"})

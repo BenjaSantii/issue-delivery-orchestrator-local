@@ -86,10 +86,13 @@ def register(state: dict[str, Any], implementation_session: str, review_session:
 
 def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
     model, effort = session.get("model"), session.get("effort")
-    if not isinstance(model, str) or not model.strip() or not isinstance(effort, str) or not effort.strip():
-        raise RunBlocked("Calling chat has no explicit model/effort; select them in Conductor before starting QA")
+    if not isinstance(model, str) or not model.strip():
+        raise RunBlocked("Calling chat has no explicit model; select it in Conductor before starting QA")
     catalog = json.loads(run([cli, "model", "--json"]).stdout)
     matches = [item for item in catalog.get("agents", []) if model in item.get("models", [])]
+    # Conductor leaves effort unset while the chat shows the agent default; that default is what it runs.
+    if len(matches) == 1 and (not isinstance(effort, str) or not effort.strip()):
+        effort = matches[0].get("defaultEffort")
     if len(matches) != 1 or effort not in matches[0].get("efforts", []):
         raise RunBlocked("Cannot identify the calling chat's agent/model/effort in the Conductor catalog")
     return {"agent": matches[0]["agent"], "model": model, "effort": effort}
