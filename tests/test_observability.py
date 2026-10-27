@@ -26,7 +26,48 @@ def usage_trace():
     return {"data": [{"sessionId": "session", "type": "userMessage", "receivedAt": "2026-10-20T10:00:01+00:00"}, complete, complete]}
 
 
+def claude_result(uuid, cumulative, turn, at, session="claude-session"):
+    counters = lambda values: dict(zip(("inputTokens", "cacheReadInputTokens",
+                                        "cacheCreationInputTokens", "outputTokens", "thinkingTokens"), values))
+    return {"sessionId": session, "type": "agent", "receivedAt": at, "content": {"rawPayload": {
+        "type": "result", "uuid": uuid, "total_cost_usd": 9.99,
+        "usage": dict(zip(("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
+                           "output_tokens"), turn)),
+        "modelUsage": {model: counters(values) for model, values in cumulative.items()}}}}
+
+
+def claude_trace():
+    user = lambda at: {"sessionId": "claude-session", "type": "userMessage", "receivedAt": at,
+                       "content": {"config": {"model": "opus-5-5-1m", "thinkingLevel": "max"}}}
+    first = claude_result("r1", {"claude-opus-5-5[1m]": (4, 100, 20, 10, 2),
+                                 "claude-haiku-5-5": (50, 0, 0, 5, 0)}, (4, 100, 20, 10),
+                          "2026-10-20T10:00:02+00:00")
+    second = claude_result("r2", {"claude-opus-5-5[1m]": (6, 300, 30, 40, 5),
+                                  "claude-haiku-5-5": (50, 0, 0, 5, 0)}, (2, 200, 10, 30),
+                           "2026-10-20T10:00:04+00:00")
+    restarted = claude_result("r3", {"claude-opus-5-5[1m]": (7, 400, 40, 50, 0)}, (7, 400, 40, 50),
+                              "2026-10-20T10:00:06+00:00")
+    return {"data": [user("2026-10-20T10:00:01+00:00"), first, second, second,
+                     user("2026-10-20T10:00:05+00:00"), restarted]}
+
+
 class UsageTests(unittest.TestCase):
+    def test_claude_turns_use_cumulative_model_deltas_and_detect_a_new_process(self):
+        usage = conductor_usage(claude_trace(), "claude-session")
+        self.assertEqual(usage["availability"], "reported")
+        by_model = {}
+        for request in usage["requests"].values():
+            self.assertEqual(request["provider"], "claude")
+            by_model.setdefault(request["model"], []).append(request["totalTokens"])
+        self.assertEqual(sorted(by_model["claude-opus-5-5[1m]"]), [134, 242, 497])
+        self.assertEqual(by_model["claude-haiku-5-5"], [55])
+        totals = token_totals(usage["requests"])
+        self.assertEqual(totals["cachedInputTokens"], 700)
+        self.assertEqual(totals["totalTokens"], 134 + 242 + 497 + 55)
+        trace = claude_trace()
+        trace["data"].append({"sessionId": "claude-session", "type": "userMessage"})
+        self.assertEqual(conductor_usage(trace, "claude-session")["availability"], "unavailable")
+
     def test_deduplicates_requests_and_does_not_sum_cache_or_cumulative_counters(self):
         trace = usage_trace()
         usage = conductor_usage(trace, "session")
@@ -118,6 +159,20 @@ class MetricsTests(unittest.TestCase):
         self.assertIn("110 tokens", report)
         self.assertNotIn("220 tokens", report)
         self.assertIn("shared", report)
+
+    def test_report_names_the_provider_of_each_unit_and_splits_the_total(self):
+        for unit, trace, session in (("TICKET-001", usage_trace(), "session"),
+                                     ("TICKET-002", claude_trace(), "claude-session")):
+            self.start(unit)
+            self.finish(unit)
+            metrics.attach_usage(self.state, unit, 1, conductor_usage(trace, session), "shared")
+        report = metrics.report(self.state)
+        self.assertIn("| TICKET-001 / 1 | ticket | Codex | gpt-6.1-sol / high |", report)
+        self.assertIn("| TICKET-002 / 1 | ticket | Claude | claude-haiku-5-5, claude-opus-5-5[1m] / max |",
+                      report)
+        self.assertIn("- Claude · claude-opus-5-5[1m]: 873 tokens", report)
+        self.assertIn("- Codex · gpt-6.1-sol: 110 tokens", report)
+        self.assertIn("1038 tokens", report)
 
     def test_failed_dirty_attempt_keeps_time_without_inventing_a_committed_delta(self):
         self.start()

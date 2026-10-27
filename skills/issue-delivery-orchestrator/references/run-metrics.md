@@ -68,7 +68,11 @@ Nunca sumar contadores acumulativos, caché o razonamiento encima de entrada+sal
 
 Se puede importar un export completo del CLI con `--transcript <archivo-en-el-run>`; conservar
 exports bajo `logs/` o `metrics/receipts/`, no junto a los registros internos `metrics/*.json`.
-El colector soporta el formato Codex `conductor_sdk_metadata.codexUsage` v1 confirmado en vivo.
+El colector soporta dos proveedores, ambos confirmados en vivo. Codex usa
+`conductor_sdk_metadata.codexUsage` v1. Claude usa el evento `result` de cada turno: su
+`modelUsage` acumula por proceso y por modelo, así que se registra la diferencia contra el turno
+anterior y se reinicia cuando el proceso cambia. El esfuerzo de Claude sale de `thinkingLevel`.
+Cada solicitud guarda proveedor y modelo; el comentario los muestra por unidad y separa el total.
 Un turno abierto, un formato no soportado, una transcripción truncada o un host sin datos reales
 se muestran como N/D. No estimar tokens ni deducir dinero facturado de una suscripción.
 El controlador debe volver a importar el uso pendiente al terminar el turno y antes del resumen

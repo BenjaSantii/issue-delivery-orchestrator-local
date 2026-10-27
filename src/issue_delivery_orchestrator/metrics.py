@@ -140,21 +140,31 @@ def attach_usage(state: dict[str, Any], unit: str, attempt: int,
                        "availability": "reported" if requests else "unavailable",
                        "incomplete": any(s["availability"] != "reported" for s in sources.values()),
                        "attribution": "shared" if any(s["attribution"] == "shared" for s in sources.values()) else "dedicated"}
-    if requests:
-        for field in ("model", "effort"):
-            observed = sorted({str(r[field]) for r in requests.values() if r.get(field)})
-            record[field] = ", ".join(observed) if observed else "N/D"
+    for field in ("provider", "model", "effort"):
+        observed = sorted({str(_value(r, field)) for r in requests.values() if _value(r, field)})
+        if observed:
+            record[field] = ", ".join(observed)
     atomic_write_json(path, record)
     return record
+
+
+PROVIDERS = {"claude": "Claude", "codex": "Codex"}
+
+
+def _value(request: dict[str, Any], field: str) -> Any:
+    # Usage imported before Claude support came only from Codex.
+    if field == "provider":
+        return PROVIDERS.get(request.get("provider") or "codex", request.get("provider"))
+    return request.get(field)
 
 
 def report(state: dict[str, Any]) -> str:
     marker = f"Métricas de entrega — {state['runId']}"
     lines = [f"### {marker}", "", "Tokens reportados; N/D significa no disponible. "
              "Caché es parte de entrada. Los consumos compartidos no se reparten entre tickets.", "",
-             "| Unidad / intento | Tipo | Modelo / esfuerzo | Estado | Tiempo total (s) | "
+             "| Unidad / intento | Tipo | Proveedor | Modelo / esfuerzo | Estado | Tiempo total (s) | "
              "Tokens entrada / salida / caché | Producto + / − | Tests + / − |",
-             "| -- | -- | -- | -- | -- | -- | -- | -- |"]
+             "| -- | -- | -- | -- | -- | -- | -- | -- | -- |"]
     unique: dict[str, Any] = {}
     all_records = records(state)
     details = []
@@ -172,7 +182,7 @@ def report(state: dict[str, Any]) -> str:
             if usage.get("incomplete"):
                 tokens += " parcial: consumo faltante N/D"
         delta = item.get("lines") or {}
-        cells = [f"{item['unit']} / {item['attempt']}", item["kind"],
+        cells = [f"{item['unit']} / {item['attempt']}", item["kind"], item.get("provider", "N/D"),
                  f"{item['model']} / {item['effort']}", item["status"],
                  str(round(item["wallSeconds"], 1)) if "wallSeconds" in item else "N/D", tokens]
         cells += [f"{delta[k]['added']} / {delta[k]['deleted']}" if k in delta else "N/D"
@@ -188,7 +198,16 @@ def report(state: dict[str, Any]) -> str:
     if unique:
         totals = token_totals(unique)
         lines += ["", f"Total de solicitudes únicas observadas: {totals['totalTokens']} tokens. "
-                  "No incluye consumo no disponible; no representa dinero facturado."]
+                  "No incluye consumo no disponible; no representa dinero facturado.", ""]
+        groups: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, request in unique.items():
+            group = (_value(request, "provider"), str(request.get("model") or "N/D"))
+            groups.setdefault(group, {})[key] = request
+        for (provider, model), requests in sorted(groups.items()):
+            group = token_totals(requests)
+            lines.append(f"- {provider} · {model}: {group['totalTokens']} tokens "
+                         f"(entrada {group['inputTokens']}, salida {group['outputTokens']}, "
+                         f"caché {group['cachedInputTokens']}).")
     head = run(["git", "rev-parse", "HEAD"], cwd=Path(state["worktree"])).stdout.strip()
     target = integration_ref(state)
     base = run(["git", "merge-base", head, target], cwd=Path(state["worktree"]), check=False)

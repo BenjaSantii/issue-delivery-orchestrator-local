@@ -743,9 +743,15 @@ def bootstrap(
     )
     if args.stack_parent:
         link_stack(state, args.stack_parent)
+    try:
+        linear_state = linear.start_issue(issue.id)
+    except OrchestrationError as error:
+        # The run already exists; a status outage must not block the Grill.
+        linear_state = {"changed": False, "error": str(error)}
     return {
         "resumed": False,
         "credentialSource": credential_source,
+        "linearState": linear_state,
         "modeSource": mode_source,
         "state": _public_state(state),
         "modeDecision": _mode_decision(state, mode_source),

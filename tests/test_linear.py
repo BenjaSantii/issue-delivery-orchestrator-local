@@ -53,6 +53,26 @@ class LinearHelpersTests(unittest.TestCase):
                 self.assertEqual(graphql.call_args_list[1].args[1]["assigneeId"], expected)
                 self.assertEqual(viewer.call_count, int(expected == "viewer-id"))
 
+    def test_start_issue_moves_only_unstarted_issues_to_the_first_started_state(self):
+        states = {"nodes": [
+            {"id": "review", "name": "In Review", "type": "started", "position": 1002},
+            {"id": "progress", "name": "In Progress", "type": "started", "position": 2},
+            {"id": "todo", "name": "Todo", "type": "unstarted", "position": 1},
+        ]}
+        client = LinearClient("secret")
+        with patch.object(client, "_graphql", side_effect=[
+            {"issue": {"state": {"name": "Todo", "type": "unstarted"}, "team": {"states": states}}},
+            {"issueUpdate": {"success": True}},
+        ]) as graphql:
+            result = client.start_issue("issue-id")
+        self.assertEqual(result, {"changed": True, "from": "Todo", "state": "In Progress"})
+        self.assertEqual(graphql.call_args_list[1].args[1], {"id": "issue-id", "stateId": "progress"})
+        with patch.object(client, "_graphql", return_value={"issue": {
+            "state": {"name": "In Review", "type": "started"}, "team": {"states": states}}}) as graphql:
+            result = client.start_issue("issue-id")
+        self.assertEqual(result, {"changed": False, "state": "In Review"})
+        self.assertEqual(graphql.call_count, 1)
+
     def test_fetches_all_issue_comments_with_cursor_pagination(self):
         class Client(LinearClient):
             def __init__(self):

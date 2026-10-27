@@ -92,6 +92,10 @@ Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la má
    Worktree adoptado: <worktree>.
    ```
 
+   Un run nuevo mueve la issue al primer estado `started` de su equipo (In Progress) si aún no
+   había empezado, y lo informa en `linearState`. Si trae `error`, mencionarlo y seguir con el
+   Grill; no mover el estado a mano.
+
    No continuar al Grill ni presentar el modo sólo en logs o handoff final. Si `source` es
    `vanilla-fallback`, decir expresamente que se eligió Vanilla porque no hubo señales Codex o
    Superset. Si el motor bloquea la adopción del fallback por un checkout dirty, anunciar igualmente

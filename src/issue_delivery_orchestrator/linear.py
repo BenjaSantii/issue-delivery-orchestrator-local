@@ -174,6 +174,38 @@ class LinearClient:
             raise OrchestrationError("Linear commentCreate did not succeed")
         return (payload.get("comment") or {}).get("id") or ""
 
+    def start_issue(self, issue_id: str) -> dict[str, Any]:
+        """Move an issue that has not started yet to its team's first started state."""
+        query = """
+        query OrchestrationIssueState($id: String!) {
+          issue(id: $id) {
+            state { name type }
+            team { states { nodes { id name type position } } }
+          }
+        }
+        """
+        issue = self._graphql(query, {"id": issue_id}).get("issue")
+        if not issue:
+            raise OrchestrationError(f"Linear issue not found: {issue_id}")
+        current = issue.get("state") or {}
+        if current.get("type") not in {"triage", "backlog", "unstarted"}:
+            return {"changed": False, "state": current.get("name")}
+        started = sorted(
+            (node for node in issue["team"]["states"]["nodes"] if node.get("type") == "started"),
+            key=lambda node: node.get("position") or 0,
+        )
+        if not started:
+            raise OrchestrationError("Linear team has no started workflow state")
+        query = """
+        mutation OrchestrationIssueStart($id: String!, $stateId: String!) {
+          issueUpdate(id: $id, input: { stateId: $stateId }) { success }
+        }
+        """
+        data = self._graphql(query, {"id": issue_id, "stateId": started[0]["id"]})
+        if not data.get("issueUpdate", {}).get("success"):
+            raise OrchestrationError("Linear issueUpdate did not succeed")
+        return {"changed": True, "from": current.get("name"), "state": started[0]["name"]}
+
     def update_description(self, issue_id: str, description: str) -> None:
         query = """
         mutation OrchestrationIssueUpdate($id: String!, $description: String!) {
