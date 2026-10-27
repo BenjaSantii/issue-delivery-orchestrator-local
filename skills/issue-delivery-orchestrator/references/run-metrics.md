@@ -66,6 +66,21 @@ Importar cada sesión hija de implementación/test que participó en la unidad; 
 no reemplaza las anteriores. Si falta uso de alguna, el resumen observado queda marcado parcial.
 Nunca sumar contadores acumulativos, caché o razonamiento encima de entrada+salida.
 
+En Conductor el chat `Generador` hace el run en un solo turno, y Claude reporta el uso al cerrar
+el turno, así que el controlador no puede importar su propio consumo mientras trabaja. Cada vez
+que su turno vaya a terminar (resumen final, pausa o bloqueo), lanzar antes y en segundo plano:
+
+```bash
+mkdir -p <run>/logs && nohup python3 <plugin-root>/scripts/issue-delivery <issue> metrics-session \
+  --session <id-del-chat> --label Generador --wait-idle-minutes 360 \
+  > <run>/logs/metrics-session.log 2>&1 &
+```
+
+Espera a que el chat quede inactivo, importa todos sus turnos cerrados en una fila propia
+`session-Generador` y actualiza el comentario. Al terminar el chat de QA, importar el suyo sin
+esperar: `metrics-session --session <id-qa> --label QA`. Reimportar una sesión no duplica tokens.
+Con Claude, los turnos cerrados se cuentan aunque haya uno abierto; la fila queda parcial.
+
 Se puede importar un export completo del CLI con `--transcript <archivo-en-el-run>`; conservar
 exports bajo `logs/` o `metrics/receipts/`, no junto a los registros internos `metrics/*.json`.
 El colector soporta dos proveedores, ambos confirmados en vivo. Codex usa

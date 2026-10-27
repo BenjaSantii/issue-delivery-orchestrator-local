@@ -73,10 +73,15 @@ def conductor_usage(transcript: dict[str, Any], session_id: str) -> dict[str, An
             if key in requests and requests[key] != item:
                 raise OrchestrationError("Conflicting duplicate usage report")
             requests[key] = item
-    complete = bool(requests) and not pending and not unsupported
+    # Claude counters accumulate, so finished turns stay exact while a later one is open.
+    # A Conductor run is one long turn: without this, its own controller could never import it.
+    claude_only = bool(requests) and all(r["provider"] == "claude" for r in requests.values())
+    complete = bool(requests) and not unsupported and (not pending or claude_only)
     return {"source": "conductor-sdk", "sessionId": session_id,
             "availability": "reported" if complete else "unavailable",
-            "reason": None if complete else "Missing usage or an unfinished/unsupported turn",
+            "incomplete": complete and pending,
+            "reason": ("Open turn: its usage is still pending" if complete and pending
+                       else None if complete else "Missing usage or an unfinished/unsupported turn"),
             "firstEventAt": first_event, "lastEventAt": last_event,
             "requests": requests if complete else {}}
 

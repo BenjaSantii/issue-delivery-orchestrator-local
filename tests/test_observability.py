@@ -66,7 +66,12 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(totals["totalTokens"], 134 + 242 + 497 + 55)
         trace = claude_trace()
         trace["data"].append({"sessionId": "claude-session", "type": "userMessage"})
-        self.assertEqual(conductor_usage(trace, "claude-session")["availability"], "unavailable")
+        open_turn = conductor_usage(trace, "claude-session")
+        self.assertEqual(open_turn["availability"], "reported")
+        self.assertTrue(open_turn["incomplete"])
+        self.assertEqual(open_turn["requests"], usage["requests"])
+        only_open = {"data": [{"sessionId": "claude-session", "type": "userMessage"}]}
+        self.assertEqual(conductor_usage(only_open, "claude-session")["availability"], "unavailable")
 
     def test_deduplicates_requests_and_does_not_sum_cache_or_cumulative_counters(self):
         trace = usage_trace()
@@ -173,6 +178,17 @@ class MetricsTests(unittest.TestCase):
         self.assertIn("- Claude · claude-opus-5-5[1m]: 873 tokens", report)
         self.assertIn("- Codex · gpt-6.1-sol: 110 tokens", report)
         self.assertIn("1038 tokens", report)
+
+    def test_session_usage_gets_its_own_row_and_reimports_without_double_counting(self):
+        trace = claude_trace()
+        trace["data"].append({"sessionId": "claude-session", "type": "userMessage"})
+        first = metrics.record_session(self.state, "Generador", conductor_usage(trace, "claude-session"))
+        self.assertTrue(first["usage"]["incomplete"])
+        metrics.record_session(self.state, "Generador", conductor_usage(claude_trace(), "claude-session"))
+        report = metrics.report(self.state)
+        self.assertIn("| session-Generador / 1 | session | Claude |", report)
+        self.assertIn("928 tokens", report)
+        self.assertNotIn("parcial", report)
 
     def test_failed_dirty_attempt_keeps_time_without_inventing_a_committed_delta(self):
         self.start()

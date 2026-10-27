@@ -206,6 +206,8 @@ En runs con `observabilityVersion: 1`, leer [run-metrics.md](references/run-metr
 El controlador registra metrics-start antes de cada ticket y metrics-finish tras su intento,
 actualizando el comentario de Linear. Usar otro intento para reparaciones y no inventar tokens
 si aún no terminó el turno del host. Los checkpoints registran las fases automáticamente.
+En Conductor, cada vez que este turno vaya a terminar (resumen final, pausa o bloqueo), lanzar
+antes en segundo plano `metrics-session` sobre el propio chat, como indica run-metrics.md.
 
 Procesar tickets en su orden aprobado. Antes de cada uno, entregar a `issue-delivery-implement` el spec completo, el ticket, el SHA inicial y la validación declarada para que la delegue a `test`.
 
