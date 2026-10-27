@@ -42,6 +42,13 @@ la sesión de ese candidato, sin duplicarla. Un cambio de código o del contrato
 Si el CLI no está disponible, ejecutar este paso desde el controlador del host con acceso al
 estado del run; no sustituirlo por `codex exec`, `claude --print` o autoevaluación del implementador.
 
+Antes de crear el QA, escribir en el run un brief operativo (por ejemplo
+`validation/qa-brief.md`) y pasarlo con `qa-session ... --brief <ruta>`. Contiene sólo hechos para
+operar: URLs por rol, cuentas de prueba, datos sembrados con sus IDs, la ruta o pantalla de cada
+historia y cómo llegar a cada estado del QA Script. No incluye por qué el trabajo debería aprobarse
+ni el relato de la implementación. Sin él, el QA lee código del producto para descubrir esos datos,
+lo que en runs medidos fue entre 16 % y 21 % de su consumo.
+
 Después de crear el QA, el Generador espera bloqueado, sin turnos de polling:
 
 ```bash

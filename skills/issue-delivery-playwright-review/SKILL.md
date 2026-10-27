@@ -57,6 +57,9 @@ escriben datos. No aprobar por toast/200 ni usar la conversación del implementa
    juzgar un criterio visual. Un selector visible no prueba que el layout sea correcto.
 6. Registrar errores de consola y `pageerror`; un error nuevo atribuible al cambio es un finding.
 7. Probar estados vacíos, errores o permisos incluidos en la aceptación.
+8. Cada script imprime sólo un resumen corto por assertion: resultado, URL y ruta de la
+   captura. DOM, consola, red y respuestas completas van a archivos del run y se leen sólo si
+   una assertion falla; su salida completa se relee en cada llamada siguiente del chat.
 
 Si la acción ocurrió pero la UI no cumple el criterio, devolver `FAIL`; no es una limitación de la
 herramienta.

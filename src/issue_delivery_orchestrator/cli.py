@@ -260,9 +260,14 @@ def parser() -> argparse.ArgumentParser:
         "implement-package",
         help="Write the context package for a fresh worker that implements or repairs one ticket",
     )
-    worker.add_argument("--ticket", required=True)
+    worker.add_argument("--ticket", help="Approved ticket; omit only for a review or CI repair")
     worker.add_argument("--finding", type=Path, help="Run file with the finding to repair")
     worker.add_argument("--model", help="Worker model for this call; defaults to the run's")
+    refactor = actions.add_parser(
+        "refactor-package",
+        help="Write the context package for a fresh worker that runs the Refactor review",
+    )
+    refactor.add_argument("--model", help="Worker model for this call; defaults to the run's")
 
     estimate = actions.add_parser("size-estimate")
     estimate.add_argument("--lines", type=int, required=True)
@@ -431,6 +436,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return {"stoppedPids": stop_owned_processes(state), "state": _public_state(state)}
     if args.action == "implement-package":
         return implement_worker.package(state, args.ticket, finding=args.finding, model=args.model)
+    if args.action == "refactor-package":
+        return implement_worker.refactor_package(state, model=args.model)
     if args.action == "size-estimate":
         return {"size": record_estimate(state, args.lines)}
     if args.action == "size-check":

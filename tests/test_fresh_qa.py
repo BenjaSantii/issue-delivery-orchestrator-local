@@ -309,3 +309,21 @@ class FreshQATests(unittest.TestCase):
         entry, _ = self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog)
         self.assertEqual((entry["model"], entry["effort"], entry["configurationSource"]),
                          ("opus-5-5-1m", "max", "explicit"))
+
+    def test_operational_brief_reaches_the_reviewer_and_must_live_in_the_run(self):
+        from pathlib import Path
+        self.state.pop("qaSession", None)
+        brief = self.fixture.root / "validation" / "qa-brief.md"
+        brief.write_text("Manager: manager@test / Ruta sembrada R-1")
+        catalog = {"agents": [{"agent": "claude", "models": ["sonnet-5-5-1m"], "efforts": ["high"]}]}
+        prompts = []
+        original = fresh_qa.qa_prompt
+        with patch("issue_delivery_orchestrator.fresh_qa.qa_prompt",
+                   side_effect=lambda *a, **k: prompts.append(original(*a, **k)) or prompts[-1]):
+            self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog, brief=brief)
+        self.assertIn(str(brief), prompts[0])
+        self.assertIn("caja negra", prompts[0])
+        self.state.pop("qaSession", None)
+        with self.assertRaisesRegex(OrchestrationError, "inside the worktree"):
+            self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog,
+                             brief=Path("/tmp/outside-brief.md"))

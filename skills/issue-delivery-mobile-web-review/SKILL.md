@@ -129,6 +129,10 @@ console.log(JSON.stringify({ field, save, drag, consoleErrors }, null, 2));
 await browser.close();
 ```
 
+Cada script imprime sólo un resumen corto por assertion: resultado, URL y ruta de la
+captura. DOM, consola, red y respuestas completas van a archivos del run y se leen sólo si
+una assertion falla; su salida completa se relee en cada llamada siguiente del chat.
+
 ## Resultado
 
 Devolver por historia y perfil simulado: `PASS`, `FAIL` o `BLOCKED`, con las métricas

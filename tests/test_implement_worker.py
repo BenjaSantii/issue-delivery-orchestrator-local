@@ -77,6 +77,38 @@ class ImplementWorkerTests(unittest.TestCase):
             implement_worker.package(self.state, "TICKET-002", finding=self.fixture.root / "missing.txt")
 
 
+    def test_review_repair_needs_no_ticket_but_needs_a_finding(self):
+        with self.assertRaisesRegex(RunBlocked, "--finding"):
+            implement_worker.package(self.state, None)
+        finding = self.fixture.root / "review" / "x100-blocker-3.md"
+        finding.parent.mkdir(exist_ok=True)
+        finding.write_text("El endpoint devuelve 500 sin audio")
+        result = implement_worker.package(self.state, None, finding=finding)
+        brief = Path(result["package"]).read_text()
+        self.assertIsNone(result["ticket"])
+        self.assertIn("no pertenece a un solo ticket", brief)
+        self.assertIn(str(finding), brief)
+        self.assertNotIn("## Ticket\n", brief)
+
+    def test_refactor_package_lists_the_branch_delta_and_receipt(self):
+        with self.assertRaisesRegex(RunBlocked, "no delta"):
+            implement_worker.refactor_package(self.state)
+        product = self.fixture.worktree / "apps" / "api" / "service.ts"
+        product.parent.mkdir(parents=True, exist_ok=True)
+        product.write_text("export const x = 1;\n")
+        qa_examples.git(self.fixture.worktree, "add", ".")
+        qa_examples.git(self.fixture.worktree, "commit", "-m", "feat: TICKET-001 service")
+        with patch("issue_delivery_orchestrator.implement_worker.integration_ref",
+                   return_value="origin/missing"):
+            result = implement_worker.refactor_package(self.state, model="opus")
+        brief = Path(result["package"]).read_text()
+        self.assertIn("apps/api/service.ts", brief)
+        self.assertIn("refactor-review.md", brief)
+        self.assertTrue(result["receipt"].endswith("review/refactor-review.md"))
+        self.assertEqual(result["spawn"]["claude"]["model"], "opus")
+        self.assertIn("feat: TICKET-001 service", brief)
+
+
 class SmallLaneTests(unittest.TestCase):
     def lane_errors(self, spec):
         return [error for error in lint_spec(spec) if "Lane" in error]

@@ -82,8 +82,12 @@ def reuse_plan(state: dict[str, Any], pinned: dict[str, str], requested: list[st
 
 
 def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
-              plan: dict[str, Any] | None = None) -> str:
+              plan: dict[str, Any] | None = None, brief: str | None = None) -> str:
     root = run_root(Path(state["worktree"]), state["runId"])
+    # Without these facts the reviewer reads product code to find them, a large share of QA tokens.
+    operations = (
+        f"Brief operativo con rutas, cuentas, datos sembrados y cómo llegar a cada estado: {brief}. "
+        "Úsalo en vez de leer código del producto. " if brief else "")
     scope = "Ejecuta todos los casos del QA Script. "
     if plan and plan["carried"]:
         carried = ", ".join(f"{qa_id} ({item['verifiedCommit'][:12]})"
@@ -107,6 +111,11 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
         f"{json.dumps(state.get('runtimes', []))}. URLs: {json.dumps(urls)}. "
         f"Reviewer del modo: {run_mode(state)}. Reutiliza los servicios; no los reinicies "
         "entre casos. Verifica que ejecuten el SHA indicado.\n"
+        f"{operations}Prueba como caja negra: lee código del producto sólo para desbloquear un "
+        "paso concreto (una ruta, selector o dato que no encuentras) y nunca para juzgar. Tus "
+        "scripts imprimen sólo un resumen corto por assertion (resultado, URL y ruta de la "
+        "captura o salida); el DOM, la consola y las respuestas completas van a archivos bajo "
+        "validation/, que lees sólo si una assertion falla.\n"
         f"{scope}UI con la skill de revisión del modo y "
         "mobile-web-reviewer para teléfono; API/concurrencia con scripts contra el runtime. "
         "En Conductor la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB "
@@ -177,9 +186,20 @@ def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
     return resolve_configuration(cli, session.get("model"), session.get("effort"), "Calling chat")
 
 
+def _brief_path(state: dict[str, Any], brief: Path | None) -> str | None:
+    if brief is None:
+        return None
+    worktree = Path(state["worktree"])
+    path = ensure_within(brief if brief.is_absolute() else worktree / brief,
+                         run_root(worktree, state["runId"]))
+    if not path.is_file():
+        raise RunBlocked("The QA operational brief is missing from the run")
+    return str(path)
+
+
 def launch(state: dict[str, Any], workspace: str, implementation_session: str,
            urls: list[str], model: str | None = None, effort: str | None = None,
-           rerun: list[str] | None = None) -> dict[str, Any]:
+           rerun: list[str] | None = None, brief: Path | None = None) -> dict[str, Any]:
     if effort and not model:
         raise RunBlocked("--effort for QA requires --model; without both, QA inherits the calling chat")
     if run_mode(state) != "conductor" or not state.get("observabilityVersion"):
@@ -228,7 +248,7 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     # Recover a created session after an interrupted response without duplicating the agent.
     candidates = [s for s in sessions if s.get("name") == name]
     if not candidates:
-        prompt = qa_prompt(state, pinned, urls, plan)
+        prompt = qa_prompt(state, pinned, urls, plan, _brief_path(state, brief))
         run([cli, "session", "create", "--workspace", workspace, "--agent", configuration["agent"],
              "--model", configuration["model"], "--effort", configuration["effort"], "--name", name,
              "--message-file", "-", "--json"], input_text=prompt)

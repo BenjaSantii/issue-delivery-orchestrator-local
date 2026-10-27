@@ -261,6 +261,12 @@ python3 <plugin-root>/scripts/issue-delivery <issue> checkpoint --phase implemen
 Leer [refactor-review.md](references/refactor-review.md) completamente. Revisar el diff de
 implementación contra los `AGENTS.md` aplicables y ejecutar cada gate de esa referencia.
 
+La revisión y sus correcciones las hace un worker nuevo, igual que en Implement: ejecutar
+`refactor-package`, lanzar el worker con `spawn` y `prompt` de la salida y esperar su resultado.
+El paquete trae el baseline del delta, el allowlist, el spec, esta referencia y la ruta del recibo.
+El principal verifica el recibo y completa el checkpoint; no revisa el diff en este chat. Si el
+plugin cargado no tiene `refactor-package`, hacer la revisión aquí como antes.
+
 - Allowlist: archivos cambiados por la implementación de este run y por commits preexistentes adoptados de la issue.
 - Salir del allowlist sólo para corregir una violación concreta de `AGENTS.md`; registrar regla, archivo y razón.
 - No hacer refactors especulativos.
@@ -457,6 +463,10 @@ rondas:
 python3 <plugin-root>/scripts/issue-delivery <issue> wait-review
 ```
 
+`wait-review` bloquea en el motor hasta la quietud de la ronda. Ejecutarlo con Bash en segundo
+plano (`run_in_background`) y terminar el turno; el host vuelve a invocar al chat al terminar. No
+consultar la PR con `sleep` ni turnos de espera.
+
 Cada ronda usa los tiempos y autores automatizados declarados por el perfil. En el perfil TurboShop,
 esperar diez minutos de quietud desde el último cambio relevante, con un máximo de veinte minutos
 por ronda y polling cada quince segundos. Procesar sólo problemas concretos de los bots configurados
@@ -464,7 +474,9 @@ y sólo la sección `BLOCKERS` de los `blockerBots` (x100 en TurboShop); ignorar
 opcionales y comentarios humanos durante el ciclo automático.
 
 1. Entregar el snapshot completo a `pr-blocker-convergence`; esa skill agrega nuevos blockers, deduplica por causa raíz y decide `FIX`, `SKIP`, `NEEDS_USER_DECISION` o `STOP`.
-2. Reparar automáticamente cada `FIX/MODEL` mediante `issue-delivery-implement`. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI sobre el delta completo y hacer un único push por ronda. Inmediatamente después del push, regenerar `validation/pr-validation.md` y ejecutar `publish-run` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
+2. Reparar automáticamente cada `FIX/MODEL` con un worker nuevo: guardar el blocker en el run y
+   ejecutar `implement-package --finding <ruta>` (con `--ticket` sólo si pertenece a uno). Agrupar
+   en un mismo worker los `FIX` de una misma causa raíz. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI sobre el delta completo y hacer un único push por ronda. Inmediatamente después del push, regenerar `validation/pr-validation.md` y ejecutar `publish-run` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
 3. Si una solicitud exige negocio, arquitectura incompatible o cambiar un acuerdo vigente, registrar `NEEDS_USER_DECISION`, completar primero trabajo independiente seguro y pausar.
 4. Si una cadena acumula dos iteraciones de reparación fallidas, registrar `STOP`, no intentar otro parche y avisar al usuario con la línea temporal y alternativas.
 5. Si el usuario mantiene el spec, guardar `SKIP/PRIOR_DECISION`. Si acepta al reviewer, reconciliar primero spec y tickets en Linear y recién después editar.
@@ -507,7 +519,9 @@ opcionales y comentarios humanos durante el ciclo automático.
 
    `acknowledge-blocker` añade idempotentemente `+1` bajo la identidad configurada, registra el
    recibo y rechaza un `SKIP` sin resumen público.
-9. Monitorear Actions. Reparar sólo fallos causados o agravados por la branch.
+9. Monitorear Actions. Reparar sólo fallos causados o agravados por la branch. Esperar los checks
+   con `gh pr checks <pr> --watch` en segundo plano, sin polling. Para un job fallido, leer sólo
+   `gh run view <run-id> --log-failed`, guardado en el run, y entregar al worker la parte del error.
 10. Aplicar la invariante de reparación según la superficie declarada. Usar CUA/browser sólo para comportamiento UI afectado; registrar `ninguna` cuando no se requiera herramienta especial.
 
 Terminar como `completed_with_base_failures` cuando sólo queden fallos demostrablemente heredados. Terminar antes si el gate queda limpio. Después de la cuarta ronda, no pedir extensiones ni seguir reparando automáticamente: informar el estado completo, incluidos blockers nuevos de esa ronda. Un `STOP` o `NEEDS_USER_DECISION` bloquea el checkpoint hasta decisión explícita.

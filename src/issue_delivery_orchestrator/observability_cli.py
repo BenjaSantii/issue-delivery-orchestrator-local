@@ -52,6 +52,8 @@ def configure(actions: Any) -> None:
     qa.add_argument("--effort", help="QA chat effort; requires --model, defaults to the agent's")
     qa.add_argument("--rerun", action="append", metavar="QA-ID|all",
                     help="After a repair, rerun only these cases and carry the previous PASS ones")
+    qa.add_argument("--brief", type=Path,
+                    help="Run file with routes, accounts and seeded data for the QA reviewer")
     wait = actions.add_parser("qa-wait", help="Block until the registered QA chat stops working")
     wait.add_argument("--timeout-minutes", type=int, default=QA_WAIT_MINUTES)
     native = actions.add_parser("qa-register", help="Register a fresh native-host QA conversation receipt")
@@ -155,7 +157,7 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
         return publish(state, linear_factory, configuration)
     if args.action == "qa-session":
         return fresh_qa.launch(state, args.workspace, args.implementation_session,
-                               args.url, args.model, args.effort, args.rerun)
+                               args.url, args.model, args.effort, args.rerun, args.brief)
     if args.action == "qa-wait":
         return wait_for_qa(state, args.timeout_minutes)
     if run_mode(state) == "conductor":
