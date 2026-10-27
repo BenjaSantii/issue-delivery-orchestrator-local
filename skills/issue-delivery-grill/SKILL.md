@@ -145,6 +145,13 @@ not just UI success or an HTTP status. Purely visual cases may explain why DB is
 
 Present the QA Script with the spec: its approval is part of the spec approval.
 
+The QA chat runs on `sonnet-5-5-1m` with `high` effort by default. Recommend another model only
+when the QA Script clearly departs from the usual size or risk, and add `QA Model:` (and
+optionally `QA Effort:`) right below `Spec ID`: a lighter model such as `haiku-5-5-1m` for a few
+visual or single-step cases, or a stronger one such as `opus-5-5-1m` for concurrency, money,
+permissions or many cases with DB verification. Give the reason in one line when presenting the
+spec; the user approves it with the spec. Otherwise omit both lines.
+
 ## Resolve the architecture
 
 Define a high-level implementation architecture sufficient for an autonomous implementer. Cover the relevant owner, boundary, data flow, persistence, authorization, failure behavior, rollout, and testing decisions without prescribing a file-by-file patch.
@@ -161,6 +168,8 @@ Produce the following headings in exactly this order. Fill every section with co
 
 ```md
 Spec ID: SPEC-...
+QA Model: <opcional; sólo si el QA no debe usar el default>
+QA Effort: <opcional; requiere QA Model>
 
 # <Spec title>
 

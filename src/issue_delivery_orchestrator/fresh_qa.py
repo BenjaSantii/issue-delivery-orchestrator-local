@@ -84,22 +84,27 @@ def register(state: dict[str, Any], implementation_session: str, review_session:
     return entry
 
 
-def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
-    model, effort = session.get("model"), session.get("effort")
+def resolve_configuration(cli: str, model: Any, effort: Any, subject: str) -> dict[str, str]:
     if not isinstance(model, str) or not model.strip():
-        raise RunBlocked("Calling chat has no explicit model; select it in Conductor before starting QA")
+        raise RunBlocked(f"{subject} has no explicit model; select it in Conductor before starting QA")
     catalog = json.loads(run([cli, "model", "--json"]).stdout)
     matches = [item for item in catalog.get("agents", []) if model in item.get("models", [])]
     # Conductor leaves effort unset while the chat shows the agent default; that default is what it runs.
     if len(matches) == 1 and (not isinstance(effort, str) or not effort.strip()):
         effort = matches[0].get("defaultEffort")
     if len(matches) != 1 or effort not in matches[0].get("efforts", []):
-        raise RunBlocked("Cannot identify the calling chat's agent/model/effort in the Conductor catalog")
+        raise RunBlocked(f"Cannot identify the {subject.lower()}'s agent/model/effort in the Conductor catalog")
     return {"agent": matches[0]["agent"], "model": model, "effort": effort}
 
 
+def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
+    return resolve_configuration(cli, session.get("model"), session.get("effort"), "Calling chat")
+
+
 def launch(state: dict[str, Any], workspace: str, implementation_session: str,
-           urls: list[str]) -> dict[str, Any]:
+           urls: list[str], model: str | None = None, effort: str | None = None) -> dict[str, Any]:
+    if effort and not model:
+        raise RunBlocked("--effort for QA requires --model; without both, QA inherits the calling chat")
     if run_mode(state) != "conductor" or not state.get("observabilityVersion"):
         raise RunBlocked("Automatic QA chat creation is supported for new Conductor runs")
     if not state.get("runtimes") or not urls:
@@ -110,13 +115,22 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     caller = next((s for s in sessions if s.get("id") == implementation_session), None)
     if caller is None:
         raise RunBlocked("Implementation session is not in this Conductor workspace")
-    configuration = caller_configuration(cli, caller)
+    # An explicit QA model decouples the reviewer's cost from the implementer's; without it QA inherits.
+    if not model and (state.get("qaConfiguration") or {}).get("model"):
+        model, effort = state["qaConfiguration"]["model"], state["qaConfiguration"].get("effort")
+    if model:
+        configuration = resolve_configuration(cli, model, effort, "Requested QA model")
+        source = "explicit"
+    else:
+        configuration = caller_configuration(cli, caller)
+        source = "inherited"
     previous = state.get("qaSession") or {}
     if all(previous.get(key) == value for key, value in pinned.items()):
         if previous.get("implementationSessionId") != implementation_session:
             raise RunBlocked("A different implementation session owns this QA attempt")
         if any(previous.get(key) != value for key, value in configuration.items()):
-            raise RunBlocked("The existing QA conversation uses a different agent/model/effort from the calling chat")
+            raise RunBlocked(
+                f"The existing QA conversation uses a different agent/model/effort from the {source} configuration")
         return previous
     contract = hashlib.sha256(json.dumps({**pinned, **configuration}, sort_keys=True).encode()).hexdigest()[:8]
     name = f"QA {state['runId']} {pinned['verifiedCommit'][:12]} {contract}"
@@ -132,12 +146,30 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
         raise RunBlocked("Cannot identify the fresh QA conversation; inspect before retrying")
     selected = candidates[0]
     if any(selected.get(key) != configuration[key] for key in ("model", "effort")):
-        raise RunBlocked("QA session model/effort does not match the calling chat")
+        raise RunBlocked(f"QA session model/effort does not match the {source} configuration")
     entry = register(state, implementation_session, selected["id"],
                      host_receipt=f"conductor-workspace:{workspace}", pinned=pinned)
-    entry.update({**configuration, "workspaceId": workspace})
+    entry.update({**configuration, "configurationSource": source, "workspaceId": workspace})
     save_state(state)
     return entry
+
+
+def results_summary(state: dict[str, Any]) -> dict[str, Any]:
+    """Light view of the QA results so the implementer can react; the checkpoint validates them fully."""
+    path = run_root(Path(state["worktree"]), state["runId"]) / "validation" / "qa-results.json"
+    if not path.is_file():
+        return {"exists": False}
+    try:
+        results = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return {"exists": True, "readable": False}
+    cases = results.get("cases") if isinstance(results, dict) else None
+    counts: dict[str, int] = {}
+    for case in cases if isinstance(cases, list) else []:
+        status = case.get("status") if isinstance(case, dict) else None
+        counts[str(status)] = counts.get(str(status), 0) + 1
+    return {"exists": True, "readable": True, "reviewSessionId": results.get("reviewSessionId"),
+            "statusCounts": counts}
 
 
 def validate_session(state: dict[str, Any], results: dict[str, Any]) -> None:

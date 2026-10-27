@@ -145,3 +145,88 @@ class FreshQATests(unittest.TestCase):
                 with self.subTest(effort=effort):
                     self.assertEqual(fresh_qa.caller_configuration("conductor", {"model": "opus-5-5-1m", "effort": effort}),
                                      {"agent": "claude", "model": "opus-5-5-1m", "effort": "high"})
+
+    def launch_with(self, caller, catalog, **options):
+        from issue_delivery_orchestrator.util import run as actual_run
+        sessions = [{"id": "implementation", "name": "Generador", **caller}]
+        created = []
+        def fake_run(args, **kwargs):
+            if args[0] != "conductor":
+                return actual_run(args, **kwargs)
+            if args[1] == "model":
+                return SimpleNamespace(stdout=json.dumps(catalog))
+            created.append(args)
+            sessions.append({"id": f"review-{len(created)}", "name": args[args.index("--name") + 1],
+                             "model": args[args.index("--model") + 1],
+                             "effort": args[args.index("--effort") + 1]})
+            return SimpleNamespace(stdout="{}")
+        with patch("issue_delivery_orchestrator.fresh_qa.conductor_cli", return_value="conductor"), patch(
+            "issue_delivery_orchestrator.fresh_qa.workspace_sessions", side_effect=lambda *_: sessions.copy()
+        ), patch("issue_delivery_orchestrator.fresh_qa.run", side_effect=fake_run):
+            entry = fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"], **options)
+        return entry, created
+
+    def test_explicit_qa_model_overrides_the_calling_chat_without_duplicating(self):
+        self.state.pop("qaSession", None)
+        catalog = {"agents": [{"agent": "claude", "models": ["opus-5-5-1m", "sonnet-5-5"],
+                               "efforts": ["medium", "high", "max"], "defaultEffort": "high"}]}
+        caller = {"model": "opus-5-5-1m", "effort": "max"}
+        entry, created = self.launch_with(caller, catalog, model="sonnet-5-5")
+        self.assertEqual((entry["model"], entry["effort"], entry["configurationSource"]),
+                         ("sonnet-5-5", "high", "explicit"))
+        args = created[0]
+        self.assertEqual(args[args.index("--model") + 1], "sonnet-5-5")
+        again, created = self.launch_with(caller, catalog, model="sonnet-5-5")
+        self.assertEqual((again["reviewSessionId"], created), (entry["reviewSessionId"], []))
+        with self.assertRaisesRegex(RunBlocked, "different agent/model/effort"):
+            self.launch_with(caller, catalog, model="sonnet-5-5", effort="medium")
+        self.state.pop("qaSession")
+        inherited, _ = self.launch_with(caller, catalog)
+        self.assertEqual((inherited["model"], inherited["configurationSource"]), ("opus-5-5-1m", "inherited"))
+
+    def test_explicit_qa_configuration_is_never_guessed(self):
+        self.state.pop("qaSession", None)
+        catalog = {"agents": [{"agent": "claude", "models": ["sonnet-5-5"], "efforts": ["high"]}]}
+        caller = {"model": "sonnet-5-5", "effort": "high"}
+        for options in ({"effort": "high"}, {"model": "unknown"}, {"model": "sonnet-5-5", "effort": "max"}):
+            with self.subTest(options=options), self.assertRaises(RunBlocked):
+                self.launch_with(caller, catalog, **options)
+        self.assertNotIn("qaSession", self.state)
+
+    def test_qa_wait_blocks_until_the_reviewer_stops_and_summarizes_results(self):
+        from issue_delivery_orchestrator import observability_cli
+        self.results()
+        statuses = iter(["working", "working", "idle"])
+        with patch.object(observability_cli, "conductor_cli", return_value="conductor"), patch.object(
+            observability_cli, "_session_status", side_effect=lambda *_: next(statuses)
+        ), patch.object(observability_cli.time, "sleep") as sleep:
+            outcome = observability_cli.wait_for_qa(self.state, 5)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual((outcome["reviewSessionId"], outcome["status"]), ("review", "idle"))
+        self.assertTrue(outcome["results"]["exists"])
+        self.assertEqual(outcome["results"]["reviewSessionId"], "review")
+        self.assertGreater(sum(outcome["results"]["statusCounts"].values()), 0)
+
+    def test_qa_wait_times_out_and_requires_a_registered_reviewer(self):
+        from issue_delivery_orchestrator import observability_cli
+        with patch.object(observability_cli, "conductor_cli", return_value="conductor"), patch.object(
+            observability_cli, "_session_status", return_value="working"
+        ), patch.object(observability_cli.time, "sleep"), patch.object(
+            observability_cli.time, "monotonic", side_effect=[0, 0, 400]
+        ):
+            with self.assertRaisesRegex(RunBlocked, "run qa-wait again"):
+                observability_cli.wait_for_qa(self.state, 5)
+        self.state.pop("qaSession")
+        with self.assertRaisesRegex(RunBlocked, "qa-session first"):
+            observability_cli.wait_for_qa(self.state, 5)
+        self.assertEqual(fresh_qa.results_summary(self.state), {"exists": False})
+
+    def test_run_qa_configuration_applies_when_no_model_is_passed(self):
+        self.state.pop("qaSession", None)
+        self.state["qaConfiguration"] = {"model": "sonnet-5-5-1m", "effort": ""}
+        catalog = {"agents": [{"agent": "claude", "models": ["opus-5-5-1m", "sonnet-5-5-1m"],
+                               "efforts": ["high", "max"], "defaultEffort": "high"}]}
+        entry, created = self.launch_with({"model": "opus-5-5-1m", "effort": "max"}, catalog)
+        self.assertEqual((entry["model"], entry["effort"], entry["configurationSource"]),
+                         ("sonnet-5-5-1m", "high", "explicit"))
+        self.assertEqual(created[0][created[0].index("--model") + 1], "sonnet-5-5-1m")

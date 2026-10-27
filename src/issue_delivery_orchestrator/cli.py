@@ -124,6 +124,8 @@ def parser() -> argparse.ArgumentParser:
         metavar="BRANCH",
         help="Start a new run as a stack child on top of this slice branch",
     )
+    result.add_argument("--qa-model", help="Conductor model for this run's fresh QA chat")
+    result.add_argument("--qa-effort", help="Effort for --qa-model; defaults to the agent's")
     result.add_argument(
         "--reviewer",
         choices=REVIEW_METHODS,
@@ -572,11 +574,14 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
         model=args.model,
         toolbox_profile=args.toolbox_profile,
         project_id=project_id,
+        qa_model=args.qa_model,
+        qa_effort=args.qa_effort,
     )
     plan = {
         "credentialSource": credential_source,
         "readiness": readiness,
         "stackParent": stack_parent,
+        "qa": launch["qa"],
         "conductor": cli,
         "command": [cli, *launch["arguments"]],
         "bootstrapMessage": launch["bootstrapMessage"],
@@ -743,6 +748,9 @@ def bootstrap(
     )
     if args.stack_parent:
         link_stack(state, args.stack_parent)
+    if args.qa_model:
+        state["qaConfiguration"] = {"model": args.qa_model, "effort": args.qa_effort or ""}
+        save_state(state)
     try:
         linear_state = linear.start_issue(issue.id)
     except OrchestrationError as error:

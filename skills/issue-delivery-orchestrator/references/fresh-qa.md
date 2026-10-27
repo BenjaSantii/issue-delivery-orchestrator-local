@@ -17,21 +17,44 @@ En Conductor, desde el controlador con acceso al CLI autenticado del host:
 ```bash
 python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
   --workspace <workspace-id> --implementation-session <session-id> \
-  --url http://localhost:<puerto>
+  --url http://localhost:<puerto> [--model <modelo> [--effort <esfuerzo>]]
 ```
 
-`--implementation-session` identifica el chat que llama al QA. El comando hereda su agente,
-modelo y esfuerzo desde la configuración real de Conductor; no fija Codex ni acepta overrides.
-Si la sesión no expone el modelo, seleccionarlo en Conductor antes de repetir; no adivinarlo.
-Conductor no guarda el esfuerzo mientras el chat usa el default del agente: en ese caso el
-comando toma el `defaultEffort` del catálogo, que es el que el chat ejecuta, y lo fija en el QA.
-Verifica la configuración del chat creado y no reutiliza silenciosamente un QA con modelo distinto.
+Si el run se creó con `--qa-model`/`--qa-effort` (los pone `cloud-launch` en el primer mensaje),
+`qa-session` usa esa configuración cuando no recibe `--model`; el Generador no la elige.
+
+`--implementation-session` identifica el chat que llama al QA. Con `--model`, el QA usa ese
+modelo del catálogo de Conductor y `--effort`, o el `defaultEffort` del agente si se omite;
+el usuario o el lanzamiento eligen así un modelo distinto del Generador. `--effort` sin
+`--model` se rechaza. Un modelo o esfuerzo que no esté en el catálogo bloquea; no se cae en
+silencio a la herencia. Sin `--model`, el comando hereda agente, modelo y esfuerzo del chat que
+llama, desde la configuración real de Conductor; no fija Codex.
+Al heredar, si la sesión no expone el modelo, seleccionarlo en Conductor antes de repetir; no
+adivinarlo. Conductor no guarda el esfuerzo mientras el chat usa el default del agente: en ese
+caso el comando toma el `defaultEffort` del catálogo, que es el que el chat ejecuta.
+El estado registra `configurationSource` (`explicit` o `inherited`). El comando verifica la
+configuración del chat creado y no reutiliza silenciosamente un QA con otro modelo o esfuerzo.
 
 El comando crea otra sesión en el mismo workspace, sin resume ni historial heredado. Registra
 su ID y fija el commit y los hashes de los artefactos aprobados. Reintentar el comando recupera
 la sesión de ese candidato, sin duplicarla. Un cambio de código o del contrato exige otra sesión.
 Si el CLI no está disponible, ejecutar este paso desde el controlador del host con acceso al
 estado del run; no sustituirlo por `codex exec`, `claude --print` o autoevaluación del implementador.
+
+Después de crear el QA, el Generador espera bloqueado, sin turnos de polling:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-wait [--timeout-minutes 360]
+```
+
+Espera a que el chat registrado deje de estar `working` y devuelve su estado y un resumen de
+`validation/qa-results.json` (existe, `reviewSessionId`, casos por estado). No valida: el
+checkpoint lo hace. En Claude ejecutarlo con Bash en segundo plano (`run_in_background`) y
+terminar el turno; el host vuelve a invocar al Generador cuando el comando termina. En hosts
+sin notificación, ejecutarlo en primer plano con un timeout mayor que el suyo. No consultar el
+chat de QA con `session status`, `sleep` ni mensajes mientras espera. Si vence, devuelve
+BLOCKED y se vuelve a ejecutar; si el QA quedó inactivo sin resultados, revisar su chat antes
+de reintentar.
 
 En Codex/Superset/Vanilla, usar el mecanismo del host para abrir un chat o reviewer con contexto
 nuevo, en el mismo worktree/runtime, y registrar su recibo con `qa-register --receipt <ruta>`:

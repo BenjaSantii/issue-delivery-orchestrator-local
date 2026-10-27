@@ -80,6 +80,13 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(readiness["problems"], [])
         self.assertEqual(readiness["specId"], "SPEC-TS-1")
         self.assertEqual(readiness["ticketIds"], ["TICKET-001", "TICKET-002"])
+        self.assertIsNone(readiness["qaModel"])
+
+    def test_spec_can_recommend_the_qa_model(self):
+        description = APPROVED.replace("Spec ID: SPEC-TS-1\n", "Spec ID: SPEC-TS-1\nQA Model: haiku-5-5-1m\n"
+                                       "QA Effort: medium\n")
+        readiness = delivery_readiness(FakeLinear(issue(description)), "TS-1", PREFIX)
+        self.assertEqual((readiness["qaModel"], readiness["qaEffort"]), ("haiku-5-5-1m", "medium"))
 
     def test_missing_tickets_block_is_reported(self):
         description = APPROVED.split(f"<!-- {PREFIX}:tickets:start -->")[0]
@@ -232,6 +239,25 @@ class BuildLaunchTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RunBlocked, "LINEAR_EXPECTED_EMAIL"):
             self.launch(configuration)
+
+    def test_qa_model_comes_from_flag_then_spec_then_default(self):
+        configuration = self.configuration()
+        launch = self.launch(configuration)
+        self.assertEqual(launch["qa"], {"model": "sonnet-5-5-1m", "effort": "high", "source": "default"})
+        self.assertIn("--qa-model sonnet-5-5-1m --qa-effort high", launch["message"])
+        self.readiness.update(qaModel="haiku-5-5-1m", qaEffort="medium")
+        self.assertEqual(self.launch(configuration)["qa"],
+                         {"model": "haiku-5-5-1m", "effort": "medium", "source": "spec"})
+        launch = self.launch(configuration, qa_model="opus-5-5-1m")
+        self.assertEqual(launch["qa"], {"model": "opus-5-5-1m", "effort": "", "source": "launch"})
+        self.assertIn("--qa-model opus-5-5-1m`", launch["message"])
+        with self.assertRaisesRegex(RunBlocked, "--qa-effort requires --qa-model"):
+            self.launch(configuration, qa_effort="low")
+
+    def test_codex_launch_keeps_qa_inheriting_without_a_choice(self):
+        launch = self.launch(self.configuration(), agent="codex")
+        self.assertIsNone(launch["qa"])
+        self.assertNotIn("--qa-model", launch["message"])
 
 
 class MessageTests(unittest.TestCase):

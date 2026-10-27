@@ -83,6 +83,8 @@ def delivery_readiness(
         "branch": (issue.get("branchName") or "").strip(),
         "state": state.get("name"),
         "specId": _first_value(spec, "Spec ID"),
+        "qaModel": _first_value(spec, "QA Model"),
+        "qaEffort": _first_value(spec, "QA Effort"),
         "ticketIds": re.findall(r"(?m)^Ticket ID:\s*(\S+)", tickets or ""),
         "parent": issue.get("parent"),
         "openBlockers": [
@@ -156,6 +158,26 @@ def _pr_merged_into(repository: Path, branch: str, target: str) -> bool:
 RESUME_AGENT = "claude"
 RESUME_MODEL = "opus-5-5-1m"
 LAUNCH_MODELS = {"claude": RESUME_MODEL, "codex": "gpt-6.1-sol"}
+# QA replays a fixed script, so it defaults to a cheaper model than the implementer. Codex keeps
+# inheriting: its workspaces do not guarantee the Claude toolbox the QA chat would need.
+QA_MODELS = {"claude": ("sonnet-5-5-1m", "high")}
+
+
+def qa_configuration_for(
+    readiness: dict[str, Any], agent: str, model: str | None, effort: str | None
+) -> dict[str, str] | None:
+    """Pick the QA chat model: launch flag, then the spec's recommendation, then the default."""
+    if effort and not model:
+        raise RunBlocked("--qa-effort requires --qa-model")
+    if model:
+        return {"model": model, "effort": effort or "", "source": "launch"}
+    if readiness.get("qaModel"):
+        return {"model": readiness["qaModel"], "effort": readiness.get("qaEffort") or "",
+                "source": "spec"}
+    if agent in QA_MODELS:
+        default_model, default_effort = QA_MODELS[agent]
+        return {"model": default_model, "effort": default_effort, "source": "default"}
+    return None
 
 
 def build_launch(
@@ -169,6 +191,8 @@ def build_launch(
     model: str | None,
     toolbox_profile: str,
     project_id: str,
+    qa_model: str | None = None,
+    qa_effort: str | None = None,
 ) -> dict[str, Any]:
     if agent not in AGENTS:
         raise OrchestrationError(f"Unsupported Conductor agent {agent}; use {', '.join(AGENTS)}")
@@ -183,7 +207,8 @@ def build_launch(
     if not _remote_branch_exists(repository, workspace_base):
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
 
-    message = launch_message(readiness, base=base, stack_parent=stack_parent)
+    qa = qa_configuration_for(readiness, agent, qa_model, qa_effort)
+    message = launch_message(readiness, base=base, stack_parent=stack_parent, qa=qa)
     name = f"[{readiness['identifier']}] {readiness['title']}"
     arguments = [
         "workspace",
@@ -218,6 +243,7 @@ def build_launch(
         "message": message,
         "agent": agent,
         "model": model,
+        "qa": qa,
         "workspaceBase": workspace_base,
         "behindTarget": _commits_behind(
             repository,
@@ -256,11 +282,14 @@ def launch_message(
     *,
     base: str,
     stack_parent: str | None,
+    qa: dict[str, str] | None = None,
 ) -> str:
     identifier = readiness["identifier"]
-    command = f"`--mode conductor --base {base}`"
-    if stack_parent:
-        command = f"`--mode conductor --stack-parent {stack_parent}`"
+    flags = f"--mode conductor --stack-parent {stack_parent}" if stack_parent else (
+        f"--mode conductor --base {base}")
+    if qa:
+        flags += f" --qa-model {qa['model']}" + (f" --qa-effort {qa['effort']}" if qa["effort"] else "")
+    command = f"`{flags}`"
     tickets = ", ".join(readiness["ticketIds"])
     return (
         f"Entrega {identifier} ({readiness['title']}) con Issue Delivery Orchestrator en "

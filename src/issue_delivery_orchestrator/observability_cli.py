@@ -16,8 +16,9 @@ from .usage import conductor_usage
 from .util import ensure_within, read_json, run
 
 ACTIONS = {"metrics-start", "metrics-finish", "metrics-usage", "metrics-session",
-           "publish-metrics", "qa-session", "qa-register"}
+           "publish-metrics", "qa-session", "qa-register", "qa-wait"}
 IDLE_POLL_SECONDS = 30
+QA_WAIT_MINUTES = 360
 
 
 def configure(actions: Any) -> None:
@@ -47,6 +48,10 @@ def configure(actions: Any) -> None:
     qa.add_argument("--workspace", required=True)
     qa.add_argument("--implementation-session", required=True)
     qa.add_argument("--url", action="append", required=True)
+    qa.add_argument("--model", help="QA chat model; omitted, QA inherits the calling chat")
+    qa.add_argument("--effort", help="QA chat effort; requires --model, defaults to the agent's")
+    wait = actions.add_parser("qa-wait", help="Block until the registered QA chat stops working")
+    wait.add_argument("--timeout-minutes", type=int, default=QA_WAIT_MINUTES)
     native = actions.add_parser("qa-register", help="Register a fresh native-host QA conversation receipt")
     native.add_argument("--receipt", type=Path, required=True)
 
@@ -95,6 +100,20 @@ def _publish_safely(state: dict[str, Any], linear_factory: Callable, configurati
                 "retry": "publish-metrics"}
 
 
+def wait_for_qa(state: dict[str, Any], timeout_minutes: int) -> dict[str, Any]:
+    review = (state.get("qaSession") or {}).get("reviewSessionId")
+    if not review:
+        raise RunBlocked("No QA conversation is registered; run qa-session first")
+    cli = conductor_cli()
+    # One blocking call replaces the implementer's polling turns; it costs no model tokens while waiting.
+    deadline = time.monotonic() + timeout_minutes * 60
+    while (status := _session_status(cli, review)) == "working":
+        if time.monotonic() > deadline:
+            raise RunBlocked("The QA chat is still working; run qa-wait again")
+        time.sleep(IDLE_POLL_SECONDS)
+    return {"reviewSessionId": review, "status": status, "results": fresh_qa.results_summary(state)}
+
+
 def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Callable,
              configuration: Any) -> dict[str, Any]:
     if not state.get("observabilityVersion"):
@@ -134,7 +153,9 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
         return publish(state, linear_factory, configuration)
     if args.action == "qa-session":
         return fresh_qa.launch(state, args.workspace, args.implementation_session,
-                               args.url)
+                               args.url, args.model, args.effort)
+    if args.action == "qa-wait":
+        return wait_for_qa(state, args.timeout_minutes)
     if run_mode(state) == "conductor":
         raise RunBlocked("Use qa-session to create and verify the actual Conductor QA chat")
     receipt = _artifact(state, args.receipt)
