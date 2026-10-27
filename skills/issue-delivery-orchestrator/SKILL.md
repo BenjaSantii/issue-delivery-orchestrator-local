@@ -339,7 +339,9 @@ el reviewer web persistido y conserva los demás gates.
    `validation/qa-results.json` y publicarlo con `publish-run` (comentario en Linear con
    capturas y salidas). Un `FAIL` o `BLOCKED` se repara antes de seguir; sólo el usuario puede
    convertirlo en `WAIVED`.
-5. Ningún reviewer edita código. Entregar findings a `issue-delivery-implement`, reparar y repetir sólo las historias invalidadas con el mismo método.
+5. Ningún reviewer edita código. Guardar cada finding en el run y repararlo con un worker nuevo
+   (`implement-package --ticket <ID> --finding <ruta>`, ver Implement); repetir sólo las
+   historias invalidadas con el mismo método.
    Con QA fresco, abrir el nuevo QA con `qa-session --rerun <QA-ID>` por cada caso invalidado
    (`--rerun all` ante duda o cambios transversales), según fresh-qa.md.
 6. Permitir como máximo cinco ciclos revisión-reparación.
