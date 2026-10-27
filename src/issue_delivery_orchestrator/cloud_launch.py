@@ -633,6 +633,94 @@ def find_issue_workspace(cli: str, identifier: str) -> dict[str, Any]:
     return matches[0]
 
 
+_LIMIT = re.compile(r"hit your [\w ]*limit(?:[^\n]*?resets ([^\n]+))?", re.I)
+SETUP_SESSION_NAME = "Conductor Cloud Workspace Setup"
+
+
+def last_items(cli: str, session_id: str, count: int = 40) -> list[Any]:
+    """The tail of a transcript; the CLI only pages forward, so this walks every page."""
+    tail: list[Any] = []
+    offset = 0
+    while True:
+        page = _transcript_page(cli, session_id, offset)
+        batch = page.get("data") or []
+        tail = (tail + batch)[-count:]
+        if not page.get("hasMore") or not batch:
+            return tail
+        offset += len(batch)
+
+
+def stop_reason(cli: str, session_id: str) -> dict[str, Any] | None:
+    """Why an idle chat stopped mid-task, when its last assistant words say so."""
+    texts = _assistant_texts(last_items(cli, session_id))
+    match = _LIMIT.search(texts[-1]) if texts else None
+    if not match:
+        return None
+    return {"reason": "usage-limit", "resets": (match.group(1) or "").strip() or None}
+
+
+def recover_message() -> str:
+    return (
+        "Tu sesión se cortó por el límite de uso y ya hay límite disponible. Retoma donde quedaste.\n\n"
+        "1. Si hay una versión más nueva del plugin, actualízala con `CODEX_TOOLBOX_PROFILE=<perfil> "
+        "pnpm conductor:toolbox` y usa su ruta como `<plugin-root>`.\n"
+        "2. La VM pudo reiniciarse mientras estabas detenido: comprueba que los servicios del "
+        "runtime respondan sobre el mismo SHA y levántalos si cayeron.\n"
+        "3. Si esperabas un QA y no terminó, retómalo con `qa-resume --note <ruta>` contando qué "
+        "restauraste (o `qa-session --replace` si su chat no puede seguir) y vuelve a esperarlo con "
+        "`qa-wait` en segundo plano. No crees sesiones de QA a mano.\n"
+        "4. Nunca esperes el reinicio de un límite con `sleep`: si vuelves a quedar sin límite, termina "
+        "el turno; te retomará un agente externo.\n"
+    )
+
+
+def recovery_plan(cli: str, workspaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per workspace, the implementation chat to wake when it or its QA stopped on a usage limit."""
+    plan = []
+    for workspace in workspaces:
+        sessions = [item for item in workspace_sessions(cli, workspace["id"])
+                    if item.get("name") != SETUP_SESSION_NAME]
+        implementers = [item for item in sessions if not str(item.get("name") or "").startswith("QA ")]
+        reviewers = [item for item in sessions if str(item.get("name") or "").startswith("QA ")]
+        # Only the latest of each matters: earlier QA chats were replaced, earlier chats resumed.
+        current = implementers[-1:] + reviewers[-1:]
+        stopped, working = [], False
+        for item in current:
+            status = _json_output(run([cli, "session", "status", str(item["id"]), "--json"]).stdout).get("status")
+            if status == "working":
+                working = working or not str(item.get("name") or "").startswith("QA ")
+                continue
+            reason = stop_reason(cli, str(item["id"]))
+            if reason:
+                stopped.append({"id": item["id"], "name": item.get("name"), **reason})
+        if not stopped:
+            continue
+        # The implementation chat owns the runtime and the QA contract, so it resumes the QA itself.
+        target = implementers[-1] if implementers else None
+        plan.append({
+            "workspace": workspace["id"], "name": workspace.get("name"), "stopped": stopped,
+            "wake": None if working or target is None else {"id": target["id"], "name": target.get("name")},
+            "skipped": "an implementation chat is already working" if working else (
+                "no implementation chat" if target is None else None),
+        })
+    return plan
+
+
+def active_workspaces(cli: str, identifier: str | None) -> list[dict[str, Any]]:
+    if identifier:
+        return [find_issue_workspace(cli, identifier)]
+    found: list[dict[str, Any]] = []
+    while True:
+        page = _json_output(run([cli, "workspace", "list", "--mine", "--json", "--limit", "100",
+                                 "--offset", str(len(found))]).stdout)
+        batch = page.get("data") or []
+        found += batch
+        if not page.get("hasMore") or not batch:
+            break
+    return [item for item in found if str(item.get("name") or "").startswith("[")
+            and not item.get("archivedAt")]
+
+
 def working_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
     busy = []
     for session in workspace_sessions(cli, workspace_id):

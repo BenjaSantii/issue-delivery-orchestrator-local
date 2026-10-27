@@ -55,9 +55,13 @@ Después de crear el QA, el Generador espera bloqueado, sin turnos de polling:
 python3 <plugin-root>/scripts/issue-delivery <issue> qa-wait [--timeout-minutes 360]
 ```
 
-Espera a que el chat registrado deje de estar `working` y devuelve su estado y un resumen de
-`validation/qa-results.json` (existe, `reviewSessionId`, casos por estado). No valida: el
-checkpoint lo hace. En Claude ejecutarlo con Bash en segundo plano (`run_in_background`) y
+Espera a que el chat registrado deje de estar `working` y devuelve su estado, un resumen de
+`validation/qa-results.json` (existe, `reviewSessionId`, casos por estado) y `state`:
+`complete` si el QA escribió todos los casos pendientes, o `stopped` con `missing`, `reason`
+(`usage-limit` y su hora `resets`, o `unknown`). Inactivo no es terminado: un límite de uso o un
+reinicio de la VM también lo dejan inactivo. No valida: el checkpoint lo hace. Con `stopped` por
+límite, terminar el turno sin `sleep`; lo retoma un agente externo con `cloud-recover`. Si el
+Generador está corriendo y el QA sigue detenido, retomarlo con `qa-resume`. En Claude ejecutarlo con Bash en segundo plano (`run_in_background`) y
 terminar el turno; el host vuelve a invocar al Generador cuando el comando termina. En hosts
 sin notificación, ejecutarlo en primer plano con un timeout mayor que el suyo. No consultar el
 chat de QA con `session status`, `sleep` ni mensajes mientras espera. Si vence, devuelve

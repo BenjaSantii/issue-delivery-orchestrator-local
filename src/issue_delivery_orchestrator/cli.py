@@ -19,7 +19,10 @@ from .cloud_launch import (
     create_delivery_session,
     create_resume_session,
     create_workspace,
+    active_workspaces,
     find_issue_workspace,
+    recover_message,
+    recovery_plan,
     resume_message,
     working_sessions,
     delivery_readiness,
@@ -160,6 +163,15 @@ def parser() -> argparse.ArgumentParser:
         "--confirm",
         action="store_true",
         help="Create the workspace; without it the command only prints the plan",
+    )
+    recover = actions.add_parser(
+        "cloud-recover",
+        help="Wake the implementation chats a usage limit stopped (issue ID, or `all`)",
+    )
+    recover.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Send the messages; without it the command only prints the plan",
     )
     resume_cloud = actions.add_parser(
         "cloud-resume",
@@ -341,6 +353,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return cloud_launch(args)
     if args.action == "cloud-resume":
         return cloud_resume(args)
+    if args.action == "cloud-recover":
+        return cloud_recover(args)
 
     configuration = settings()
     repository = _repository(args.worktree, configuration.repository)
@@ -530,6 +544,24 @@ def read_linear_issue(identifier_or_url: str) -> dict[str, Any]:
         "issue": asdict(issue),
         "comments": [asdict(comment) for comment in comments],
     }
+
+
+def cloud_recover(args: argparse.Namespace) -> dict[str, Any]:
+    # A usage limit stops the implementation chat and its QA together, so neither can wake the
+    # other; this runs from outside, on the user's machine.
+    if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
+        raise RunBlocked("cloud-recover runs from your machine, not inside a cloud workspace")
+    cli = conductor_cli()
+    identifier = None if args.issue.strip().lower() == "all" else normalize_issue_identifier(args.issue)
+    plan = recovery_plan(cli, active_workspaces(cli, identifier))
+    sent = 0
+    for item in plan:
+        if args.confirm and item["wake"]:
+            run([cli, "message", "create", "--session", str(item["wake"]["id"]), "--message-file", "-"],
+                input_text=recover_message())
+            item["sent"] = True
+            sent += 1
+    return {"plan": plan, "message": recover_message(), "sent": sent, "confirmed": args.confirm}
 
 
 def cloud_resume(args: argparse.Namespace) -> dict[str, Any]:

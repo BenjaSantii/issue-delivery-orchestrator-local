@@ -362,6 +362,26 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     return entry
 
 
+def outcome(state: dict[str, Any], cli: str) -> dict[str, Any]:
+    """Whether an idle reviewer finished every pending case or stopped before writing them all."""
+    from .cloud_launch import stop_reason
+    from .qa_script import approved_qa_cases
+
+    entry = state.get("qaSession") or {}
+    summary = results_summary(state)
+    path = run_root(Path(state["worktree"]), state["runId"]) / "validation" / "qa-results.json"
+    written: set[str] = set()
+    if summary.get("readable") and summary.get("reviewSessionId") == entry.get("reviewSessionId"):
+        cases = json.loads(path.read_text()).get("cases") or []
+        written = {str(case.get("id")) for case in cases if isinstance(case, dict)}
+    expected = {case["QA ID"] for case in approved_qa_cases(state) or []}
+    missing = sorted(expected - written - set(entry.get("carried") or {}))
+    if not missing:
+        return {"state": "complete", "results": summary}
+    reason = stop_reason(cli, entry["reviewSessionId"]) or {"reason": "unknown"}
+    return {"state": "stopped", "missing": missing, **reason, "results": summary}
+
+
 def results_summary(state: dict[str, Any]) -> dict[str, Any]:
     """Light view of the QA results so the implementer can react; the checkpoint validates them fully."""
     path = run_root(Path(state["worktree"]), state["runId"]) / "validation" / "qa-results.json"

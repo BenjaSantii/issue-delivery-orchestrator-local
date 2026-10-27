@@ -119,7 +119,8 @@ def wait_for_qa(state: dict[str, Any], timeout_minutes: int) -> dict[str, Any]:
         if time.monotonic() > deadline:
             raise RunBlocked("The QA chat is still working; run qa-wait again")
         time.sleep(IDLE_POLL_SECONDS)
-    return {"reviewSessionId": review, "status": status, "results": fresh_qa.results_summary(state)}
+    # Idle is not done: a usage limit or a VM restart also leaves the reviewer idle mid-script.
+    return {"reviewSessionId": review, "status": status, **fresh_qa.outcome(state, cli)}
 
 
 def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Callable,

@@ -75,10 +75,27 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 7. Para seguir un workspace: `conductor workspace status <id>` y
    `conductor workspace session <id>`; no enviar mensajes a sus sesiones sin que el usuario lo pida.
 
+## Retomar chats detenidos por límite de uso
+
+El límite de uso es de la cuenta: cuando se agota, el Generador y su QA se detienen juntos y
+ninguno puede retomar al otro. Los retoma un agente externo desde la máquina local:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery all cloud-recover            # sólo el plan
+python3 <plugin-root>/scripts/issue-delivery LOG-376 cloud-recover --confirm  # envía el mensaje
+```
+
+Revisa el último chat que implementa y el último QA de cada workspace activo (`all`) o de una
+issue. Si alguno quedó inactivo con el aviso de límite, envía un mensaje al chat que implementa:
+revisar el runtime, retomar el QA con `qa-resume` y volver a `qa-wait`. No escribe a un workspace
+cuyo chat que implementa sigue trabajando. Ejecutarlo cuando el límite ya esté disponible (cambio
+de cuenta o reinicio); el plan muestra la hora de reinicio que dio cada chat. Lee las
+conversaciones completas, así que con muchos workspaces tarda unos minutos.
+
 ## Reanudar una sesión que murió
 
-Si la sesión Entrega (u otra del run) se detiene, por ejemplo por límite de uso, retomar el run en
-el mismo workspace con una sesión nueva:
+Si la sesión Entrega (u otra del run) no puede seguir en su chat (por ejemplo su contexto ya es
+demasiado largo), retomar el run en el mismo workspace con una sesión nueva:
 
 ```bash
 python3 <plugin-root>/scripts/issue-delivery <issue> cloud-resume            # sólo el plan

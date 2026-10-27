@@ -637,3 +637,38 @@ class SessionListingTests(unittest.TestCase):
         self.assertEqual(len(sessions), 102)
         self.assertEqual(sessions[-1]["id"], "Generador")
         self.assertEqual(calls[1][calls[1].index("--offset") + 1], "100")
+
+
+class RecoveryTests(unittest.TestCase):
+    def plan(self, sessions, statuses, texts):
+        from types import SimpleNamespace
+        from issue_delivery_orchestrator import cloud_launch
+        def fake_run(arguments, **_):
+            return SimpleNamespace(stdout=json.dumps({"status": statuses[arguments[3]]}))
+        with patch.object(cloud_launch, "workspace_sessions", return_value=sessions), patch.object(
+            cloud_launch, "run", side_effect=fake_run
+        ), patch.object(cloud_launch, "last_items",
+                        side_effect=lambda _cli, sid: [{"type": "text", "text": texts.get(sid, "Listo.")}]):
+            return cloud_launch.recovery_plan("conductor", [{"id": "ws", "name": "[LOG-1] Algo"}])
+
+    def test_wakes_the_latest_implementation_chat_when_it_or_its_qa_hit_the_limit(self):
+        sessions = [{"id": "setup", "name": "Conductor Cloud Workspace Setup"},
+                    {"id": "gen", "name": "Generador"}, {"id": "qa-old", "name": "QA run abc 1"},
+                    {"id": "qa", "name": "QA run def 2"}, {"id": "resume", "name": "Reanudación 1"}]
+        limit = "You've hit your session limit · resets 11pm (UTC)"
+        plan = self.plan(sessions, {"gen": "idle", "qa-old": "idle", "qa": "idle", "resume": "idle"},
+                         {"qa": limit, "qa-old": limit, "gen": limit})
+        self.assertEqual(plan[0]["wake"]["id"], "resume")
+        self.assertEqual([item["id"] for item in plan[0]["stopped"]], ["qa"])
+        self.assertEqual(plan[0]["stopped"][0]["resets"], "11pm (UTC)")
+
+    def test_leaves_alone_workspaces_without_a_stop_or_with_a_working_implementer(self):
+        sessions = [{"id": "gen", "name": "Generador"}, {"id": "qa", "name": "QA run def 2"}]
+        limit = "You've hit your session limit · resets 11pm (UTC)"
+        self.assertEqual(self.plan(sessions, {"gen": "idle", "qa": "idle"}, {}), [])
+        plan = self.plan(sessions, {"gen": "working", "qa": "idle"}, {"qa": limit})
+        self.assertIsNone(plan[0]["wake"])
+        self.assertIn("already working", plan[0]["skipped"])
+        message = __import__("issue_delivery_orchestrator.cloud_launch", fromlist=["x"]).recover_message()
+        self.assertIn("qa-resume", message)
+        self.assertIn("sleep", message)
