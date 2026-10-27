@@ -28,6 +28,9 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
      [--stack-parent <branch>] cloud-launch [--agent claude|codex] [--model <id>]
    ```
 
+   Sin `--model`, Claude usa `opus-5-5-1m` y Codex `gpt-6.1-sol`. Las sesiones siempre llevan un
+   modelo explícito porque el QA hereda el modelo del chat que lo llama.
+
    El comando bloquea si la issue está cerrada, no tiene bloque de spec (`Spec ID`) o de tickets
    (`Ticket ID`), o tiene un bloqueador abierto. Un bloqueador que además es su issue padre se
    trata como stack: el workspace parte de la rama del padre y el run usa `--stack-parent`; esa

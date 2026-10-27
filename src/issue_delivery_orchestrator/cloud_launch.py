@@ -153,6 +153,11 @@ def _pr_merged_into(repository: Path, branch: str, target: str) -> bool:
         return False
 
 
+RESUME_AGENT = "claude"
+RESUME_MODEL = "opus-5-5-1m"
+LAUNCH_MODELS = {"claude": RESUME_MODEL, "codex": "gpt-6.1-sol"}
+
+
 def build_launch(
     readiness: dict[str, Any],
     configuration: Settings,
@@ -172,6 +177,8 @@ def build_launch(
             "LINEAR_EXPECTED_EMAIL and GITHUB_EXPECTED_LOGIN must be configured; the cloud "
             "toolbox install fails without them"
         )
+    # Without an explicit model Conductor picks an older default and QA cannot inherit it.
+    model = model or LAUNCH_MODELS[agent]
     workspace_base = stack_parent or base
     if not _remote_branch_exists(repository, workspace_base):
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
@@ -532,8 +539,6 @@ def _normalize_remote(remote: str) -> str:
     return value.removesuffix(".git").rstrip("/")
 
 
-RESUME_AGENT = "claude"
-RESUME_MODEL = "opus-5-5-1m"
 
 
 def resume_message(identifier: str) -> str:

@@ -151,7 +151,7 @@ def parser() -> argparse.ArgumentParser:
         help="software-skills profile the cloud workspace installs",
     )
     cloud.add_argument("--agent", default="claude", choices=("claude", "codex"))
-    cloud.add_argument("--model", help="Model for the first Conductor session")
+    cloud.add_argument("--model", help="Model for the Conductor sessions (default per agent)")
     cloud.add_argument("--conductor-project", help="Conductor project ID")
     cloud.add_argument(
         "--confirm",
