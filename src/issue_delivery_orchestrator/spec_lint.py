@@ -34,6 +34,14 @@ STATE_MODEL_HEADER = ("State", "Entered when", "User sees", "Allowed actions", "
 _EMPTY = {"", "-", "—", "n/a", "na", "none", "ninguno", "tbd", "por confirmar"}
 _UNCERTAIN = re.compile(r"(?i)\b(unknown|uncertain|incierto|desconocido)\b")
 _EVIDENCE = re.compile(r"`[^`]+`|\b[\w.-]+/[\w./-]+|\b\w+\.(ts|tsx|js|py|sql|json)\b")
+# A small lane trades ceremony for speed, so it is only open to specs with little risk to replay.
+SMALL_LANE_MAX_QA_CASES = 4
+_LANE = re.compile(r"(?m)^Lane:[ \t]*(\S+)")
+
+
+def spec_lane(markdown: str) -> str:
+    match = _LANE.search(markdown)
+    return match.group(1).lower() if match else "standard"
 
 
 def _section(markdown: str, heading: str) -> str | None:
@@ -126,6 +134,24 @@ def lint_spec(markdown: str) -> list[str]:
                 "because external-failure applies"
             )
     errors += lint_qa_script(markdown)
+    errors += _lint_lane(markdown, applies)
+    return errors
+
+
+def _lint_lane(markdown: str, applies: dict[str, bool]) -> list[str]:
+    from .qa_script import qa_cases
+
+    lane = spec_lane(markdown)
+    if lane == "standard":
+        return []
+    if lane != "small":
+        return [f"Unknown Lane `{lane}`; use `small` or omit the line"]
+    errors = []
+    if applies.get("concurrency"):
+        errors.append("Lane small cannot apply concurrency; drop the Lane line")
+    cases = qa_cases(markdown) or []
+    if len(cases) > SMALL_LANE_MAX_QA_CASES:
+        errors.append(f"Lane small allows at most {SMALL_LANE_MAX_QA_CASES} QA cases, got {len(cases)}")
     return errors
 
 

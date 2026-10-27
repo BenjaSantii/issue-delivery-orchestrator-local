@@ -83,6 +83,7 @@ def delivery_readiness(
         "branch": (issue.get("branchName") or "").strip(),
         "state": state.get("name"),
         "specId": _first_value(spec, "Spec ID"),
+        "lane": (_first_value(spec, "Lane") or "standard").lower(),
         "qaModel": _first_value(spec, "QA Model"),
         "qaEffort": _first_value(spec, "QA Effort"),
         "ticketIds": re.findall(r"(?m)^Ticket ID:\s*(\S+)", tickets or ""),
@@ -161,6 +162,10 @@ LAUNCH_MODELS = {"claude": RESUME_MODEL, "codex": "gpt-6.1-sol"}
 # QA replays a fixed script, so it defaults to a cheaper model than the implementer. Codex keeps
 # inheriting: its workspaces do not guarantee the Claude toolbox the QA chat would need.
 QA_MODELS = {"claude": ("sonnet-5-5-1m", "high")}
+# A small-lane QA Script has at most four cases and no concurrency, so less effort replays it.
+SMALL_LANE_QA_MODELS = {"claude": ("sonnet-5-5-1m", "medium")}
+# Each ticket runs in a fresh worker; Claude's Agent tool takes only model aliases.
+IMPLEMENT_MODELS = {"claude": "sonnet"}
 
 
 def qa_configuration_for(
@@ -174,8 +179,9 @@ def qa_configuration_for(
     if readiness.get("qaModel"):
         return {"model": readiness["qaModel"], "effort": readiness.get("qaEffort") or "",
                 "source": "spec"}
-    if agent in QA_MODELS:
-        default_model, default_effort = QA_MODELS[agent]
+    defaults = SMALL_LANE_QA_MODELS if readiness.get("lane") == "small" else QA_MODELS
+    if agent in defaults:
+        default_model, default_effort = defaults[agent]
         return {"model": default_model, "effort": default_effort, "source": "default"}
     return None
 
@@ -193,6 +199,7 @@ def build_launch(
     project_id: str,
     qa_model: str | None = None,
     qa_effort: str | None = None,
+    implement_model: str | None = None,
 ) -> dict[str, Any]:
     if agent not in AGENTS:
         raise OrchestrationError(f"Unsupported Conductor agent {agent}; use {', '.join(AGENTS)}")
@@ -208,7 +215,9 @@ def build_launch(
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
 
     qa = qa_configuration_for(readiness, agent, qa_model, qa_effort)
-    message = launch_message(readiness, base=base, stack_parent=stack_parent, qa=qa)
+    implement_model = implement_model or IMPLEMENT_MODELS.get(agent)
+    message = launch_message(readiness, base=base, stack_parent=stack_parent, qa=qa,
+                             implement_model=implement_model)
     name = f"[{readiness['identifier']}] {readiness['title']}"
     arguments = [
         "workspace",
@@ -244,6 +253,7 @@ def build_launch(
         "agent": agent,
         "model": model,
         "qa": qa,
+        "implementModel": implement_model,
         "workspaceBase": workspace_base,
         "behindTarget": _commits_behind(
             repository,
@@ -283,10 +293,13 @@ def launch_message(
     base: str,
     stack_parent: str | None,
     qa: dict[str, str] | None = None,
+    implement_model: str | None = None,
 ) -> str:
     identifier = readiness["identifier"]
     flags = f"--mode conductor --stack-parent {stack_parent}" if stack_parent else (
         f"--mode conductor --base {base}")
+    if implement_model:
+        flags += f" --implement-model {implement_model}"
     if qa:
         flags += f" --qa-model {qa['model']}" + (f" --qa-effort {qa['effort']}" if qa["effort"] else "")
     command = f"`{flags}`"

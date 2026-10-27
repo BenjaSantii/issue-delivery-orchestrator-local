@@ -152,6 +152,16 @@ visual or single-step cases, or a stronger one such as `opus-5-5-1m` for concurr
 permissions or many cases with DB verification. Give the reason in one line when presenting the
 spec; the user approves it with the spec. Otherwise omit both lines.
 
+### Small lane
+
+Propose `Lane: small` below `Spec ID` when the issue is small and low risk: at most two tickets,
+about 300 estimated lines in total, no concurrency risk, and a QA Script of at most four cases (a
+happy path per user story plus only the applicable edge, authorization or failure case). The
+publisher rejects `Lane: small` with concurrency or more than four QA cases. The lane keeps every
+gate (fresh QA with DB verification, refactor review, PR convergence) and changes only the cost:
+fewer QA cases and a QA chat with `medium` effort. Ask the user to approve the lane with the spec;
+when in doubt, omit it.
+
 ## Resolve the architecture
 
 Define a high-level implementation architecture sufficient for an autonomous implementer. Cover the relevant owner, boundary, data flow, persistence, authorization, failure behavior, rollout, and testing decisions without prescribing a file-by-file patch.
@@ -168,6 +178,7 @@ Produce the following headings in exactly this order. Fill every section with co
 
 ```md
 Spec ID: SPEC-...
+Lane: <opcional; `small` sólo si cumple los criterios de vía chica>
 QA Model: <opcional; sólo si el QA no debe usar el default>
 QA Effort: <opcional; requiere QA Model>
 

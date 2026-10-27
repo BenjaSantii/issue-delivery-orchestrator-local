@@ -98,7 +98,7 @@ from .state import (
     now,
 )
 from .util import ensure_within, run
-from . import observability_cli
+from . import implement_worker, observability_cli
 
 
 def parser() -> argparse.ArgumentParser:
@@ -124,6 +124,7 @@ def parser() -> argparse.ArgumentParser:
         metavar="BRANCH",
         help="Start a new run as a stack child on top of this slice branch",
     )
+    result.add_argument("--implement-model", help="Model for the fresh worker of each ticket")
     result.add_argument("--qa-model", help="Conductor model for this run's fresh QA chat")
     result.add_argument("--qa-effort", help="Effort for --qa-model; defaults to the agent's")
     result.add_argument(
@@ -254,6 +255,14 @@ def parser() -> argparse.ArgumentParser:
     acknowledgement = actions.add_parser("acknowledge-blocker")
     acknowledgement.add_argument("--comment-id", type=int, required=True)
     acknowledgement.add_argument("--decision", choices=("FIX", "SKIP"), required=True)
+
+    worker = actions.add_parser(
+        "implement-package",
+        help="Write the context package for a fresh worker that implements or repairs one ticket",
+    )
+    worker.add_argument("--ticket", required=True)
+    worker.add_argument("--finding", type=Path, help="Run file with the finding to repair")
+    worker.add_argument("--model", help="Worker model for this call; defaults to the run's")
 
     estimate = actions.add_parser("size-estimate")
     estimate.add_argument("--lines", type=int, required=True)
@@ -420,6 +429,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return launch_browser(state, args.url)
     if args.action == "stop-processes":
         return {"stoppedPids": stop_owned_processes(state), "state": _public_state(state)}
+    if args.action == "implement-package":
+        return implement_worker.package(state, args.ticket, finding=args.finding, model=args.model)
     if args.action == "size-estimate":
         return {"size": record_estimate(state, args.lines)}
     if args.action == "size-check":
@@ -576,12 +587,14 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
         project_id=project_id,
         qa_model=args.qa_model,
         qa_effort=args.qa_effort,
+        implement_model=args.implement_model,
     )
     plan = {
         "credentialSource": credential_source,
         "readiness": readiness,
         "stackParent": stack_parent,
         "qa": launch["qa"],
+        "implementModel": launch["implementModel"],
         "conductor": cli,
         "command": [cli, *launch["arguments"]],
         "bootstrapMessage": launch["bootstrapMessage"],
@@ -748,6 +761,9 @@ def bootstrap(
     )
     if args.stack_parent:
         link_stack(state, args.stack_parent)
+    if args.implement_model:
+        state["implementModel"] = args.implement_model
+        save_state(state)
     if args.qa_model:
         state["qaConfiguration"] = {"model": args.qa_model, "effort": args.qa_effort or ""}
         save_state(state)

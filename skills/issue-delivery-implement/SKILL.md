@@ -7,6 +7,11 @@ description: "Implementar o reparar un ticket aprobado con alcance YAGNI, obedie
 
 Implementar una unidad de trabajo a la vez. Exigir como entrada el spec vigente, ticket o finding, SHA inicial y criterios de aceptación. Leer todos los `AGENTS.md` aplicables antes de editar.
 
+Normalmente corre en un worker nuevo que recibió el paquete de `implement-package`: ese archivo es
+la única fuente del encargo. El worker no ejecuta comandos del motor (checkpoint, metrics,
+qa-session, size-check), no lanza otros agentes ni la etapa siguiente, y termina con la respuesta
+de "Entregar". Incluir en ella los casos del QA Script que el cambio puede invalidar.
+
 ## Delimitar
 
 1. Inspeccionar código, tests y patrones existentes.

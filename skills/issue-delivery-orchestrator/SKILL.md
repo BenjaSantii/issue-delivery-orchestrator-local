@@ -169,7 +169,9 @@ Considerar ciclo de reparación toda instrucción que pida ajustar, corregir o c
 
 1. Reanudar el mismo run y worktree. Capturar el reporte exacto como escenario de aceptación de reparación.
 2. Identificar las historias afectadas. Si el caso no estaba en el spec, crear una historia temporal `REPAIR-<n>` dentro del estado ignorado del run con precondición, pasos y resultado esperado; no ampliar el spec remoto por un bug compatible con su intención.
-3. Invocar `issue-delivery-implement`, que debe delegar la validación automatizada enfocada a `test`, y dejar la branch en su estado final.
+3. Lanzar un worker nuevo de reparación con `implement-package --ticket <ID> --finding <ruta>` (ver
+   Implement) que siga `issue-delivery-implement`, delegue la validación automatizada enfocada a
+   `test` y deje la branch en su estado final.
 4. Declarar en el ledger del blocker la superficie afectada y la evidencia mínima necesaria: `STATIC`, `TEST`, `API_COMMAND`, `LOCAL_RUNTIME` o `UI`.
 5. Levantar Local Runtime sólo cuando la integración o el estado ejecutándose sean parte del riesgo. Para `UI`, invocar el reviewer fijado por el modo: `issue-delivery-cua-review` en `superset` o `vanilla`, `issue-delivery-browser-review` en `codex` o `issue-delivery-playwright-review` en `conductor`.
 6. No invocar CUA/browser para cambios exclusivamente backend, documentación, tests, build o lógica no observable en UI. Si una reparación puede invalidar una historia UI aceptada, repetir sólo esa historia con el reviewer fijado.
@@ -209,7 +211,33 @@ si aún no terminó el turno del host. Los checkpoints registran las fases autom
 En Conductor, cada vez que este turno vaya a terminar (resumen final, pausa o bloqueo), lanzar
 antes en segundo plano `metrics-session` sobre el propio chat, como indica run-metrics.md.
 
-Procesar tickets en su orden aprobado. Antes de cada uno, entregar a `issue-delivery-implement` el spec completo, el ticket, el SHA inicial y la validación declarada para que la delegue a `test`.
+Procesar tickets en su orden aprobado. Cada ticket lo implementa un worker nuevo, sin el historial
+de este chat; el principal conserva preguntas, aprobaciones, metrics, `size-check` y checkpoints.
+Así el chat principal no acumula el contexto de cada ticket y cada llamada relee menos historial.
+
+1. Generar el paquete del ticket:
+
+   ```bash
+   python3 <plugin-root>/scripts/issue-delivery <issue> implement-package --ticket <TICKET-ID>
+   ```
+
+   El paquete trae rutas absolutas, el spec y tickets aprobados, el bloque del ticket, el SHA
+   inicial, los commits ya aceptados del run y lo que el worker debe devolver. Usa el modelo del
+   run (`--implement-model` al crearlo; `cloud-launch` pone `sonnet` con Claude) o `--model` en la
+   llamada; sin ninguno hereda el del principal.
+2. Lanzar el worker con `spawn` de la salida según el host: Claude Code con la herramienta `Agent`
+   (`subagent_type: general-purpose` y `model` si viene); Codex con `spawn_agent` y
+   `fork_turns="none"`. Pasarle sólo `prompt` de la salida. No usar forks que copien la
+   conversación ni ejecutar el ticket en el principal. Un solo worker edita el worktree a la vez.
+3. Esperar su resultado sin reescribirlo. Con `DONE` o `NO_OP`, verificar el commit y el recibo de
+   `test` antes de aceptarlo; con `NEEDS_USER_DECISION` o `BLOCKED`, resolverlo en el principal.
+4. Si el ticket queda rojo o un reviewer devuelve un finding, guardar la evidencia en el run y
+   lanzar otro worker nuevo con `implement-package --ticket <ID> --finding <ruta>`. No continuar la
+   reparación en el principal.
+
+Runs creados antes de esta regla: si `implement-package` no existe en el plugin cargado, seguir
+entregando a `issue-delivery-implement` el spec completo, el ticket, el SHA inicial y la validación
+declarada en este chat.
 
 - Terminar primero los tickets AFK no bloqueados.
 - Pausar justo antes de un HITL y pedir la acción mínima al usuario.

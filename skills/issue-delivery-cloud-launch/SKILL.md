@@ -25,7 +25,8 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 
    ```bash
    python3 <plugin-root>/scripts/issue-delivery <issue> [--base <branch>] \
-     [--stack-parent <branch>] [--qa-model <id> [--qa-effort <esfuerzo>]] cloud-launch \
+     [--stack-parent <branch>] [--implement-model <alias>] \
+     [--qa-model <id> [--qa-effort <esfuerzo>]] cloud-launch \
      [--agent claude|codex] [--model <id>]
    ```
 
@@ -34,8 +35,13 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
 
    El modelo del chat de QA se elige en este orden: `--qa-model` del lanzamiento, las líneas
    `QA Model:`/`QA Effort:` del spec (recomendación aprobada en el grill) y, con Claude, el
-   default `sonnet-5-5-1m` con esfuerzo `high`. Con Codex, sin flag ni spec, el QA hereda. El
-   plan muestra `qa` con su `source`; el primer mensaje pasa `--qa-model`/`--qa-effort` al run.
+   default `sonnet-5-5-1m` con esfuerzo `high` (`medium` si el spec dice `Lane: small`). Con
+   Codex, sin flag ni spec, el QA hereda. El plan muestra `qa` con su `source`; el primer mensaje
+   pasa `--qa-model`/`--qa-effort` al run.
+
+   Cada ticket lo implementa un worker nuevo. Con Claude usa `sonnet` salvo `--implement-model`
+   (`opus`, `haiku` o `fable`); con Codex hereda el modelo del chat. El plan lo muestra como
+   `implementModel` y el primer mensaje lo pasa al run.
 
    El comando bloquea si la issue está cerrada, no tiene bloque de spec (`Spec ID`) o de tickets
    (`Ticket ID`), o tiene un bloqueador abierto. Un bloqueador que además es su issue padre se

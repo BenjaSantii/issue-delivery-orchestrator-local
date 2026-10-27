@@ -254,9 +254,20 @@ class BuildLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(RunBlocked, "--qa-effort requires --qa-model"):
             self.launch(configuration, qa_effort="low")
 
+    def test_implement_workers_default_to_sonnet_and_small_lane_lightens_qa(self):
+        configuration = self.configuration()
+        launch = self.launch(configuration)
+        self.assertEqual(launch["implementModel"], "sonnet")
+        self.assertIn("--implement-model sonnet --qa-model", launch["message"])
+        self.assertEqual(self.launch(configuration, implement_model="opus")["implementModel"], "opus")
+        self.readiness["lane"] = "small"
+        self.assertEqual(self.launch(configuration)["qa"],
+                         {"model": "sonnet-5-5-1m", "effort": "medium", "source": "default"})
+
     def test_codex_launch_keeps_qa_inheriting_without_a_choice(self):
         launch = self.launch(self.configuration(), agent="codex")
         self.assertIsNone(launch["qa"])
+        self.assertIsNone(launch["implementModel"])
         self.assertNotIn("--qa-model", launch["message"])
 
 
