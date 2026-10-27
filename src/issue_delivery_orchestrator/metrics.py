@@ -138,8 +138,35 @@ def attach_usage(state: dict[str, Any], unit: str, attempt: int,
     requests = {key: value for s in sources.values() for key, value in s["requests"].items()}
     record["usage"] = {"requests": requests, "sessionId": ", ".join(sources),
                        "availability": "reported" if requests else "unavailable",
-                       "incomplete": any(s["availability"] != "reported" for s in sources.values()),
+                       "incomplete": any(s["availability"] != "reported" or s.get("incomplete")
+                                         for s in sources.values()),
                        "attribution": "shared" if any(s["attribution"] == "shared" for s in sources.values()) else "dedicated"}
+    for field in ("provider", "model", "effort"):
+        observed = sorted({str(_value(r, field)) for r in requests.values() if _value(r, field)})
+        if observed:
+            record[field] = ", ".join(observed)
+    atomic_write_json(path, record)
+    return record
+
+
+def record_session(state: dict[str, Any], label: str, usage: dict[str, Any]) -> dict[str, Any]:
+    """Keep a whole chat's usage in its own row instead of splitting it across tickets."""
+    path = record_path(state, f"session-{label}", 1)
+    previous = read_json(path) or {}
+    prior = previous.get("usage", {}).get("requests", {}) if previous else {}
+    if any(prior[k] != v for k, v in usage["requests"].items() if k in prior):
+        raise OrchestrationError("Conflicting previously imported usage report")
+    requests = {**prior, **usage["requests"]}
+    start, end = usage.get("firstEventAt"), usage.get("lastEventAt")
+    record = {"unit": f"session-{label}", "kind": "session", "attempt": 1,
+              "startedAt": start, "finishedAt": end, "status": "DONE" if requests else "N/D",
+              "wallSeconds": ((timestamp(end) - timestamp(start)).total_seconds()
+                              if start and end else None),
+              "lines": None, "model": "N/D", "effort": "N/D",
+              "usage": {"requests": requests, "sessionId": usage["sessionId"],
+                        "availability": "reported" if requests else "unavailable",
+                        "incomplete": bool(usage.get("incomplete")) or not requests,
+                        "attribution": "shared"}}
     for field in ("provider", "model", "effort"):
         observed = sorted({str(_value(r, field)) for r in requests.values() if _value(r, field)})
         if observed:
@@ -184,11 +211,12 @@ def report(state: dict[str, Any]) -> str:
         delta = item.get("lines") or {}
         cells = [f"{item['unit']} / {item['attempt']}", item["kind"], item.get("provider", "N/D"),
                  f"{item['model']} / {item['effort']}", item["status"],
-                 str(round(item["wallSeconds"], 1)) if "wallSeconds" in item else "N/D", tokens]
+                 str(round(item["wallSeconds"], 1)) if item.get("wallSeconds") is not None else "N/D",
+                 tokens]
         cells += [f"{delta[k]['added']} / {delta[k]['deleted']}" if k in delta else "N/D"
                   for k in ("product", "test")]
         lines.append("| " + " | ".join(str(c).replace("|", "\\|").replace("\n", " ") for c in cells) + " |")
-        if item.get("finishedAt"):
+        if item.get("finishedAt") and item.get("startCommit"):
             details.append(f"{item['unit']} / {item['attempt']}: `{item['startCommit'][:12]}` → "
                          f"`{item['endCommit'][:12]}`; " + "; ".join(
                              f"{key}={item[key] if item[key] is not None else 'N/D'}"

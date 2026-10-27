@@ -2,20 +2,22 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import Any, Callable
 
 from . import fresh_qa, metrics
-from .cloud_launch import _session_transcript, conductor_cli
+from .cloud_launch import _json_output, _session_transcript, conductor_cli
 from .errors import OrchestrationError, RunBlocked
 from .linear import upsert_marker_block
 from .qa_script import _reject_secrets
 from .state import now, run_mode, run_root, save_state
 from .usage import conductor_usage
-from .util import ensure_within, read_json
+from .util import ensure_within, read_json, run
 
-ACTIONS = {"metrics-start", "metrics-finish", "metrics-usage", "publish-metrics",
-           "qa-session", "qa-register"}
+ACTIONS = {"metrics-start", "metrics-finish", "metrics-usage", "metrics-session",
+           "publish-metrics", "qa-session", "qa-register"}
+IDLE_POLL_SECONDS = 30
 
 
 def configure(actions: Any) -> None:
@@ -34,6 +36,12 @@ def configure(actions: Any) -> None:
             action.add_argument("--session", required=True)
             action.add_argument("--transcript", type=Path)
             action.add_argument("--attribution", choices=("dedicated", "shared"), required=True)
+    session = actions.add_parser(
+        "metrics-session", help="Import a whole Conductor chat's usage as its own metrics row")
+    session.add_argument("--session", required=True)
+    session.add_argument("--label", required=True)
+    session.add_argument("--wait-idle-minutes", type=int, default=0,
+                         help="Wait until the chat stops working, so its last turn is reported")
     actions.add_parser("publish-metrics")
     qa = actions.add_parser("qa-session", help="Create a fresh QA chat in the same Conductor workspace")
     qa.add_argument("--workspace", required=True)
@@ -54,6 +62,10 @@ def _artifact(state: dict[str, Any], path: Path | None) -> Any:
         return read_json(resolved)
     except (ValueError, OSError) as error:
         raise OrchestrationError("Observability receipt is not readable JSON") from error
+
+
+def _session_status(cli: str, session_id: str) -> str | None:
+    return _json_output(run([cli, "session", "status", session_id, "--json"]).stdout).get("status")
 
 
 def publish(state: dict[str, Any], linear_factory: Callable, configuration: Any) -> dict[str, Any]:
@@ -104,6 +116,19 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
                          "availability": "unavailable", "requests": {},
                          "reason": "Transcript could not be read completely"}
         item = metrics.attach_usage(state, args.unit, args.attempt, usage, args.attribution)
+        return {"metric": item, "linear": _publish_safely(state, linear_factory, configuration)}
+    if args.action == "metrics-session":
+        cli = conductor_cli()
+        deadline = time.monotonic() + args.wait_idle_minutes * 60
+        while args.wait_idle_minutes and _session_status(cli, args.session) == "working":
+            if time.monotonic() > deadline:
+                raise RunBlocked("The chat is still working; import its usage later")
+            time.sleep(IDLE_POLL_SECONDS)
+        try:
+            usage = conductor_usage(_session_transcript(cli, args.session), args.session)
+        except OrchestrationError:
+            usage = {"sessionId": args.session, "requests": {}, "availability": "unavailable"}
+        item = metrics.record_session(state, args.label, usage)
         return {"metric": item, "linear": _publish_safely(state, linear_factory, configuration)}
     if args.action == "publish-metrics":
         return publish(state, linear_factory, configuration)

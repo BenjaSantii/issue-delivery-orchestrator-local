@@ -212,6 +212,13 @@ class BuildLaunchTests(unittest.TestCase):
 
         self.assertLess(arguments.index("--model"), arguments.index("--env"))
 
+    def test_each_agent_gets_an_explicit_model_by_default(self):
+        for agent, model in (("claude", "opus-5-5-1m"), ("codex", "gpt-6.1-sol")):
+            with self.subTest(agent=agent):
+                launch = self.launch(self.configuration(), agent=agent)
+                self.assertEqual(launch["model"], model)
+                self.assertEqual(launch["arguments"][launch["arguments"].index("--model") + 1], model)
+
     def test_missing_base_branch_blocks(self):
         with self.assertRaisesRegex(RunBlocked, "does not exist on origin"):
             self.launch(self.configuration(), base="development")
