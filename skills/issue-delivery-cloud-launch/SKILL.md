@@ -39,9 +39,9 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
    Codex, sin flag ni spec, el QA hereda. El plan muestra `qa` con su `source`; el primer mensaje
    pasa `--qa-model`/`--qa-effort` al run.
 
-   Cada ticket lo implementa un worker nuevo. Con Claude usa `sonnet` salvo `--implement-model`
-   (`opus`, `haiku` o `fable`); con Codex hereda el modelo del chat. El plan lo muestra como
-   `implementModel` y el primer mensaje lo pasa al run.
+   Cada ticket lo implementa un worker nuevo que hereda el modelo del chat principal, salvo
+   `--implement-model` (`sonnet`, `opus`, `haiku` o `fable` en Claude). El plan lo muestra como
+   `implementModel` y, si se indicó, el primer mensaje lo pasa al run.
 
    El comando bloquea si la issue está cerrada, no tiene bloque de spec (`Spec ID`) o de tickets
    (`Ticket ID`), o tiene un bloqueador abierto. Un bloqueador que además es su issue padre se

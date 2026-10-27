@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +162,17 @@ def resolve_configuration(cli: str, model: Any, effort: Any, subject: str) -> di
     return {"agent": matches[0]["agent"], "model": model, "effort": effort}
 
 
+def spec_qa_configuration(state: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The QA model the approved spec recommends by difficulty, for runs launched without one."""
+    relative = (state.get("artifacts") or {}).get("spec")
+    path = Path(state["worktree"]) / relative if relative else None
+    if not path or not path.is_file():
+        return None, None
+    text = path.read_text()
+    values = [re.search(rf"(?m)^{key}:[ \t]*(\S+)", text) for key in ("QA Model", "QA Effort")]
+    return tuple(match.group(1) if match else None for match in values)
+
+
 def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
     return resolve_configuration(cli, session.get("model"), session.get("effort"), "Calling chat")
 
@@ -183,6 +195,8 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     # An explicit QA model decouples the reviewer's cost from the implementer's; without it QA inherits.
     if not model and (state.get("qaConfiguration") or {}).get("model"):
         model, effort = state["qaConfiguration"]["model"], state["qaConfiguration"].get("effort")
+    if not model:
+        model, effort = spec_qa_configuration(state)
     if model:
         configuration = resolve_configuration(cli, model, effort, "Requested QA model")
         source = "explicit"

@@ -164,8 +164,6 @@ LAUNCH_MODELS = {"claude": RESUME_MODEL, "codex": "gpt-6.1-sol"}
 QA_MODELS = {"claude": ("sonnet-5-5-1m", "high")}
 # A small-lane QA Script has at most four cases and no concurrency, so less effort replays it.
 SMALL_LANE_QA_MODELS = {"claude": ("sonnet-5-5-1m", "medium")}
-# Each ticket runs in a fresh worker; Claude's Agent tool takes only model aliases.
-IMPLEMENT_MODELS = {"claude": "sonnet"}
 
 
 def qa_configuration_for(
@@ -215,7 +213,8 @@ def build_launch(
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
 
     qa = qa_configuration_for(readiness, agent, qa_model, qa_effort)
-    implement_model = implement_model or IMPLEMENT_MODELS.get(agent)
+    # Workers inherit the principal's model unless the launch names one: the fresh context, not a
+    # cheaper model, is what keeps implementation affordable.
     message = launch_message(readiness, base=base, stack_parent=stack_parent, qa=qa,
                              implement_model=implement_model)
     name = f"[{readiness['identifier']}] {readiness['title']}"

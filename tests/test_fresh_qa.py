@@ -299,3 +299,13 @@ class FreshQATests(unittest.TestCase):
             self.rerun("QA-001")
         with self.assertRaisesRegex(RunBlocked, "cannot be combined"):
             self.rerun("all", "QA-001")
+
+    def test_approved_spec_qa_model_applies_when_launch_named_none(self):
+        self.state.pop("qaSession", None)
+        spec = self.fixture.root / "planning" / "spec.md"
+        spec.write_text("Spec ID: SPEC-1\nQA Model: opus-5-5-1m\nQA Effort: max\n" + spec.read_text())
+        catalog = {"agents": [{"agent": "claude", "models": ["opus-5-5-1m", "sonnet-5-5-1m"],
+                               "efforts": ["high", "max"], "defaultEffort": "high"}]}
+        entry, _ = self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog)
+        self.assertEqual((entry["model"], entry["effort"], entry["configurationSource"]),
+                         ("opus-5-5-1m", "max", "explicit"))

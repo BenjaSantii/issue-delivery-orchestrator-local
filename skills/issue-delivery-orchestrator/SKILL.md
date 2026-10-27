@@ -223,8 +223,8 @@ Así el chat principal no acumula el contexto de cada ticket y cada llamada rele
 
    El paquete trae rutas absolutas, el spec y tickets aprobados, el bloque del ticket, el SHA
    inicial, los commits ya aceptados del run y lo que el worker debe devolver. Usa el modelo del
-   run (`--implement-model` al crearlo; `cloud-launch` pone `sonnet` con Claude) o `--model` en la
-   llamada; sin ninguno hereda el del principal.
+   run (`--implement-model` al crearlo) o `--model` en la llamada; sin ninguno hereda el del
+   principal, que es lo normal.
 2. Lanzar el worker con `spawn` de la salida según el host: Claude Code con la herramienta `Agent`
    (`subagent_type: general-purpose` y `model` si viene); Codex con `spawn_agent` y
    `fork_turns="none"`. Pasarle sólo `prompt` de la salida. No usar forks que copien la

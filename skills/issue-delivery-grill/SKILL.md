@@ -145,12 +145,17 @@ not just UI success or an HTTP status. Purely visual cases may explain why DB is
 
 Present the QA Script with the spec: its approval is part of the spec approval.
 
-The QA chat runs on `sonnet-5-5-1m` with `high` effort by default. Recommend another model only
-when the QA Script clearly departs from the usual size or risk, and add `QA Model:` (and
-optionally `QA Effort:`) right below `Spec ID`: a lighter model such as `haiku-5-5-1m` for a few
-visual or single-step cases, or a stronger one such as `opus-5-5-1m` for concurrency, money,
-permissions or many cases with DB verification. Give the reason in one line when presenting the
-spec; the user approves it with the spec. Otherwise omit both lines.
+Always choose the QA chat model by the difficulty of the QA Script and write `QA Model:` and
+`QA Effort:` right below `Spec ID`:
+
+| Difficulty | When | QA Model | QA Effort |
+| --- | --- | --- | --- |
+| Simple | At most four cases, visual or single-step, no concurrency, at most one DB invariant | `sonnet-5-5-1m` | `medium` |
+| Normal | Several flows, roles or failures with DB checks, no concurrency | `sonnet-5-5-1m` | `high` |
+| Hard | Concurrency, money, permissions across actors, migrations, remote writes with uncertain outcome, or more than eight cases | `opus-5-5-1m` | `high` |
+
+Give the difficulty and its reason in one line when presenting the spec; the user approves it
+with the spec. Use the higher row when a spec sits between two.
 
 ### Small lane
 
@@ -179,8 +184,8 @@ Produce the following headings in exactly this order. Fill every section with co
 ```md
 Spec ID: SPEC-...
 Lane: <opcional; `small` sólo si cumple los criterios de vía chica>
-QA Model: <opcional; sólo si el QA no debe usar el default>
-QA Effort: <opcional; requiere QA Model>
+QA Model: <modelo del QA según la dificultad>
+QA Effort: <esfuerzo del QA según la dificultad>
 
 # <Spec title>
 

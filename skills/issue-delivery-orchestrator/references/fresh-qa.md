@@ -21,7 +21,8 @@ python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
 ```
 
 Si el run se creó con `--qa-model`/`--qa-effort` (los pone `cloud-launch` en el primer mensaje),
-`qa-session` usa esa configuración cuando no recibe `--model`; el Generador no la elige.
+`qa-session` usa esa configuración cuando no recibe `--model`; si no la hay, usa `QA Model`/
+`QA Effort` del spec aprobado del run. El Generador no elige el modelo.
 
 `--implementation-session` identifica el chat que llama al QA. Con `--model`, el QA usa ese
 modelo del catálogo de Conductor y `--effort`, o el `defaultEffort` del agente si se omite;
