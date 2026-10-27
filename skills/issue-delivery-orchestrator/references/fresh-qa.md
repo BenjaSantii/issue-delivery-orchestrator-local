@@ -64,6 +64,32 @@ chat de QA con `session status`, `sleep` ni mensajes mientras espera. Si vence, 
 BLOCKED y se vuelve a ejecutar; si el QA quedó inactivo sin resultados, revisar su chat antes
 de reintentar.
 
+### Si el QA se detiene
+
+El QA actualiza `qa-results.json` después de cada caso, así que un corte no borra lo resuelto.
+Cuando su chat se detiene sin terminar (límite de uso, reinicio de la VM, caída del runtime):
+
+1. Volver a levantar el runtime sobre el mismo SHA y comprobar que responde.
+2. Retomar **el mismo chat** con
+   `qa-resume [--note <ruta-en-el-run>]`. El mensaje le pide seguir donde quedó, sin repetir
+   casos ya resueltos; la nota cuenta qué se restauró. Un chat cortado por límite se retoma igual
+   después de cambiar de cuenta o de que el límite se reinicie: no hace falta otro.
+3. Sólo si ese chat no puede continuar (borrado, contexto agotado o falla al retomarlo), crear un
+   reemplazo con `qa-session ... --replace`. Hereda los casos que el QA anterior ya resolvió en
+   ese commit y ejecuta sólo los pendientes. También sirve cuando la sesión que implementa cambió
+   (por ejemplo una reanudación).
+
+Nunca crear sesiones de QA a mano con `conductor session create` ni registrarlas con scripts
+propios: se pierden la recuperación por nombre y la herencia de casos. Si `qa-session` o
+`qa-resume` bloquean, detenerse y avisar al usuario con el error.
+
+### QA largo
+
+Con más de seis casos por ejecutar, el chat de QA coordina: agrupa 3 a 5 casos por historia o
+superficie y los ejecuta con subagentes nuevos, uno a la vez, porque comparten runtime, DB y datos
+sembrados. Él junta los resultados y escribe `qa-results.json` después de cada grupo. Así su
+contexto no acumula las capturas y salidas de todos los casos.
+
 En Codex/Superset/Vanilla, usar el mecanismo del host para abrir un chat o reviewer con contexto
 nuevo, en el mismo worktree/runtime, y registrar su recibo con `qa-register --receipt <ruta>`:
 

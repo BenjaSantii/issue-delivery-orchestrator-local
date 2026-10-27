@@ -620,3 +620,20 @@ class MergedBlockerTests(unittest.TestCase):
 
         self.assertEqual(len(readiness["openBlockers"]), 1)
 
+
+
+class SessionListingTests(unittest.TestCase):
+    def test_reads_every_page_of_workspace_sessions(self):
+        from types import SimpleNamespace
+        from issue_delivery_orchestrator.cloud_launch import workspace_sessions
+        pages = [{"data": [{"id": f"s{i}"} for i in range(100)], "hasMore": True},
+                 {"data": [{"id": "s100"}, {"id": "Generador"}], "hasMore": False}]
+        calls = []
+        def fake_run(arguments, **_):
+            calls.append(arguments)
+            return SimpleNamespace(stdout=json.dumps(pages[len(calls) - 1]))
+        with patch("issue_delivery_orchestrator.cloud_launch.run", side_effect=fake_run):
+            sessions = workspace_sessions("conductor", "ws-1")
+        self.assertEqual(len(sessions), 102)
+        self.assertEqual(sessions[-1]["id"], "Generador")
+        self.assertEqual(calls[1][calls[1].index("--offset") + 1], "100")

@@ -148,13 +148,17 @@ class FreshQATests(unittest.TestCase):
 
     def launch_with(self, caller, catalog, **options):
         from issue_delivery_orchestrator.util import run as actual_run
-        sessions = [{"id": "implementation", "name": "Generador", **caller}]
+        implementation = options.pop("implementation", "implementation")
+        sessions = [{"id": implementation, "name": "Generador", **caller}]
         created = []
+        statuses = getattr(self, "statuses", {})
         def fake_run(args, **kwargs):
             if args[0] != "conductor":
                 return actual_run(args, **kwargs)
             if args[1] == "model":
                 return SimpleNamespace(stdout=json.dumps(catalog))
+            if args[1:3] == ["session", "status"]:
+                return SimpleNamespace(stdout=json.dumps({"status": statuses.get(args[3], "idle")}))
             created.append(args)
             sessions.append({"id": f"review-{len(created)}", "name": args[args.index("--name") + 1],
                              "model": args[args.index("--model") + 1],
@@ -163,7 +167,7 @@ class FreshQATests(unittest.TestCase):
         with patch("issue_delivery_orchestrator.fresh_qa.conductor_cli", return_value="conductor"), patch(
             "issue_delivery_orchestrator.fresh_qa.workspace_sessions", side_effect=lambda *_: sessions.copy()
         ), patch("issue_delivery_orchestrator.fresh_qa.run", side_effect=fake_run):
-            entry = fresh_qa.launch(self.state, "workspace", "implementation", ["http://localhost:3000"], **options)
+            entry = fresh_qa.launch(self.state, "workspace", implementation, ["http://localhost:3000"], **options)
         return entry, created
 
     def test_explicit_qa_model_overrides_the_calling_chat_without_duplicating(self):
@@ -259,7 +263,7 @@ class FreshQATests(unittest.TestCase):
         entry = self.rerun("QA-001")
         self.assertEqual(entry["rerun"], ["QA-001", "QA-003"])
         self.assertEqual(list(entry["carried"]), ["QA-002"])
-        archive = self.fixture.root / "validation" / f"qa-results-{self.fixture.head[:12]}.json"
+        archive = self.fixture.root / "validation" / f"qa-results-{self.fixture.head[:12]}-review.json"
         self.assertTrue(archive.is_file())
         result = validate_qa_results(self.state, self.qa_round(entry["reviewSessionId"], {"QA-001", "QA-003"}))
         carried = {case["id"]: case for case in result["cases"] if case.get("carried")}
@@ -327,3 +331,73 @@ class FreshQATests(unittest.TestCase):
         with self.assertRaisesRegex(OrchestrationError, "inside the worktree"):
             self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog,
                              brief=Path("/tmp/outside-brief.md"))
+
+    def replace(self, implementation="resume-chat"):
+        catalog = {"agents": [{"agent": "claude", "models": ["sonnet-5-5-1m"], "efforts": ["high"]}]}
+        return self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog,
+                                replace=True, implementation=implementation)
+
+    def test_replace_keeps_what_a_stopped_reviewer_settled_on_the_same_commit(self):
+        self.qa_round("review", {"QA-001"})
+        entry, created = self.replace()
+        self.assertEqual(len(created), 1)
+        self.assertEqual((list(entry["carried"]), entry["rerun"]), (["QA-001"], ["QA-002", "QA-003"]))
+        self.assertEqual((entry["replaces"], entry["implementationSessionId"]), ("review", "resume-chat"))
+        result = validate_qa_results(self.state, self.qa_round(entry["reviewSessionId"], {"QA-002", "QA-003"}))
+        # Same commit: the settled case is still verified at HEAD, so it reads as a normal PASS.
+        self.assertEqual({case["id"]: case["status"] for case in result["cases"]},
+                         {"QA-001": "PASS", "QA-002": "PASS", "QA-003": "PASS"})
+
+    def test_replace_refuses_a_working_reviewer_or_another_commit(self):
+        self.statuses = {"review": "working"}
+        with self.assertRaisesRegex(RunBlocked, "still working"):
+            self.replace()
+        self.statuses = {}
+        self.repair("fix-1")
+        with self.assertRaisesRegex(RunBlocked, "same commit"):
+            self.replace()
+
+    def test_replace_without_own_results_keeps_only_what_was_inherited(self):
+        entry, created = self.replace()
+        self.assertEqual(len(created), 1)
+        self.assertNotIn("carried", entry)
+        self.assertEqual(entry["replaces"], "review")
+
+    def test_resume_wakes_the_registered_reviewer_instead_of_a_new_one(self):
+        note = self.fixture.root / "validation" / "resume-note.md"
+        note.write_text("Levanté Postgres y la web en :3004 a las 20:14.")
+        from issue_delivery_orchestrator.util import run as actual_run
+        sent, statuses = [], {"review": "idle"}
+        def fake_run(args, **kwargs):
+            if args[0] != "conductor":
+                return actual_run(args, **kwargs)
+            if args[1:3] == ["session", "status"]:
+                return SimpleNamespace(stdout=json.dumps({"status": statuses["review"]}))
+            sent.append((args, kwargs.get("input_text", "")))
+            return SimpleNamespace(stdout="{}")
+        with patch("issue_delivery_orchestrator.fresh_qa.conductor_cli", return_value="conductor"), patch(
+            "issue_delivery_orchestrator.fresh_qa.run", side_effect=fake_run
+        ):
+            outcome = fresh_qa.resume(self.state, note)
+            statuses["review"] = "working"
+            with self.assertRaisesRegex(RunBlocked, "still working"):
+                fresh_qa.resume(self.state)
+        args, text = sent[0]
+        self.assertEqual(args[1:5], ["message", "create", "--session", "review"])
+        self.assertIn(self.fixture.head, text)
+        self.assertIn("No repitas casos", text)
+        self.assertIn(":3004", text)
+        self.assertEqual(outcome["resumes"], 1)
+        self.repair("fix-1")
+        with self.assertRaisesRegex(RunBlocked, "--rerun"):
+            fresh_qa.resume(self.state)
+
+    def test_long_qa_scripts_are_split_into_sequential_subagent_groups(self):
+        pinned = fresh_qa.snapshot(self.state)
+        prompt = fresh_qa.qa_prompt(self.state, pinned, ["http://localhost:3000"])
+        self.assertNotIn("subagente nuevo", prompt)
+        self.assertIn("Actualízalo después de cada caso", prompt)
+        with patch.object(fresh_qa, "QA_GROUP_THRESHOLD", 2):
+            prompt = fresh_qa.qa_prompt(self.state, pinned, ["http://localhost:3000"])
+        self.assertIn("subagente nuevo", prompt)
+        self.assertIn("UNO A LA VEZ", prompt)

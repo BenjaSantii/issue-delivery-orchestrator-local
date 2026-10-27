@@ -16,7 +16,7 @@ from .usage import conductor_usage
 from .util import ensure_within, read_json, run
 
 ACTIONS = {"metrics-start", "metrics-finish", "metrics-usage", "metrics-session",
-           "publish-metrics", "qa-session", "qa-register", "qa-wait"}
+           "publish-metrics", "qa-session", "qa-register", "qa-wait", "qa-resume"}
 IDLE_POLL_SECONDS = 30
 QA_WAIT_MINUTES = 360
 
@@ -54,6 +54,10 @@ def configure(actions: Any) -> None:
                     help="After a repair, rerun only these cases and carry the previous PASS ones")
     qa.add_argument("--brief", type=Path,
                     help="Run file with routes, accounts and seeded data for the QA reviewer")
+    qa.add_argument("--replace", action="store_true",
+                    help="Replace a stopped QA of this commit, keeping the cases it settled")
+    awaken = actions.add_parser("qa-resume", help="Resume the registered QA chat after it stopped")
+    awaken.add_argument("--note", type=Path, help="Run file with what the controller restored")
     wait = actions.add_parser("qa-wait", help="Block until the registered QA chat stops working")
     wait.add_argument("--timeout-minutes", type=int, default=QA_WAIT_MINUTES)
     native = actions.add_parser("qa-register", help="Register a fresh native-host QA conversation receipt")
@@ -157,7 +161,10 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
         return publish(state, linear_factory, configuration)
     if args.action == "qa-session":
         return fresh_qa.launch(state, args.workspace, args.implementation_session,
-                               args.url, args.model, args.effort, args.rerun, args.brief)
+                               args.url, args.model, args.effort, args.rerun, args.brief,
+                               args.replace)
+    if args.action == "qa-resume":
+        return fresh_qa.resume(state, args.note)
     if args.action == "qa-wait":
         return wait_for_qa(state, args.timeout_minutes)
     if run_mode(state) == "conductor":

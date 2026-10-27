@@ -297,6 +297,8 @@ Si `observabilityVersion: 1`, leer [fresh-qa.md](references/fresh-qa.md) y abrir
 conversación nueva de QA, con el mismo runtime y los artefactos aprobados fijados al SHA.
 En Conductor usa el `--model`/`--effort` pedidos para el QA o, si no se indican, hereda los del
 chat que llama, sin fijar Codex. Esperar al QA con `qa-wait` en segundo plano, sin polling.
+Si el QA se detiene, retomarlo con `qa-resume` (o `qa-session --replace` si no puede seguir);
+nunca crear sesiones de QA a mano. Ver "Si el QA se detiene" en fresh-qa.md.
 Los pasos de verificación siguientes los ejecuta ese reviewer, no el implementador. El
 controlador espera sus resultados, publica la evidencia y completa el checkpoint. Verificar
 consecuencias persistidas en DB, además del comportamiento UI/API. Los runs anteriores mantienen

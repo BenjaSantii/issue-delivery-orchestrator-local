@@ -7,10 +7,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .cloud_launch import conductor_cli, workspace_sessions
+from .cloud_launch import _json_output, conductor_cli, workspace_sessions
 from .errors import RunBlocked
 from .state import now, run_mode, run_root, save_state
 from .util import ensure_within, run
+
+
+# Above this many cases the reviewer delegates groups to fresh subagents to keep its context small.
+QA_GROUP_THRESHOLD = 6
 
 
 def snapshot(state: dict[str, Any]) -> dict[str, str]:
@@ -43,7 +47,7 @@ def reuse_plan(state: dict[str, Any], pinned: dict[str, str], requested: list[st
     if run(["git", "merge-base", "--is-ancestor", commit, "HEAD"], cwd=worktree,
            check=False).returncode != 0:
         raise RunBlocked("The previous QA commit is not an ancestor of HEAD; QA must rerun every case")
-    archived = root / "validation" / f"qa-results-{commit[:12]}.json"
+    archived = root / "validation" / f"qa-results-{commit[:12]}-{previous['reviewSessionId'][:8]}.json"
     current = root / "validation" / "qa-results.json"
     # Archive before the new reviewer writes; a retried launch finds the archive instead.
     source = current if current.is_file() else archived
@@ -81,6 +85,66 @@ def reuse_plan(state: dict[str, Any], pinned: dict[str, str], requested: list[st
     return {"rerun": rerun, "carried": carried}
 
 
+def replacement_plan(state: dict[str, Any], pinned: dict[str, str]) -> dict[str, Any] | None:
+    """What a stopped reviewer of this same candidate already settled, so its successor skips it."""
+    previous = state.get("qaSession") or {}
+    try:
+        plan = reuse_plan(state, pinned, [])
+    except RunBlocked:
+        # The stopped reviewer wrote nothing of its own; keep only what it had inherited.
+        plan = None
+    if plan is None:
+        from .qa_script import approved_qa_cases
+        carried = previous.get("carried") or {}
+        expected = [case["QA ID"] for case in approved_qa_cases(state) or []]
+        plan = {"rerun": [qa_id for qa_id in expected if qa_id not in carried], "carried": carried}
+    return plan if plan["carried"] else None
+
+
+def _status(cli: str, session_id: str) -> str | None:
+    return _json_output(run([cli, "session", "status", session_id, "--json"]).stdout).get("status")
+
+
+def resume_message(pinned: dict[str, str], note: str | None) -> str:
+    return (
+        "Tu sesión de QA se detuvo (límite de uso, reinicio de la VM u otro corte). Retoma el QA "
+        f"donde quedaste, sobre el mismo commit {pinned['verifiedCommit']}. Antes de seguir, "
+        "comprueba que los servicios del runtime respondan y ejecuten ese SHA; si no, devuelve "
+        "BLOCKED de entorno. No repitas casos que ya tengan resultado en "
+        "validation/qa-results.json o evidencia completa; para los pendientes vuelve a tomar el "
+        "estado \"antes\" de la DB, porque pudo cambiar. Actualiza qa-results.json después de "
+        "cada caso y al final con todos.\n" + (f"\nNota del controlador:\n{note.strip()}\n" if note else "")
+    )
+
+
+def resume(state: dict[str, Any], note: Path | None = None) -> dict[str, Any]:
+    """Wake the registered reviewer instead of starting another QA from zero."""
+    entry = state.get("qaSession") or {}
+    review = entry.get("reviewSessionId")
+    if not review:
+        raise RunBlocked("No QA conversation is registered; run qa-session first")
+    pinned = snapshot(state)
+    if any(entry.get(key) != value for key, value in pinned.items()):
+        raise RunBlocked("Code or approved artifacts changed since this QA; create a new one with "
+                         "qa-session --rerun")
+    cli = conductor_cli()
+    if _status(cli, review) == "working":
+        raise RunBlocked("The QA conversation is still working; wait for it with qa-wait")
+    text = None
+    if note is not None:
+        worktree = Path(state["worktree"])
+        path = ensure_within(note if note.is_absolute() else worktree / note,
+                             run_root(worktree, state["runId"]))
+        if not path.is_file():
+            raise RunBlocked("The resume note is missing from the run")
+        text = path.read_text()
+    run([cli, "message", "create", "--session", review, "--message-file", "-"],
+        input_text=resume_message(pinned, text))
+    entry.setdefault("resumedAt", []).append(now())
+    save_state(state)
+    return {"reviewSessionId": review, "resumed": True, "resumes": len(entry["resumedAt"])}
+
+
 def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
               plan: dict[str, Any] | None = None, brief: str | None = None) -> str:
     root = run_root(Path(state["worktree"]), state["runId"])
@@ -88,7 +152,20 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
     operations = (
         f"Brief operativo con rutas, cuentas, datos sembrados y cómo llegar a cada estado: {brief}. "
         "Úsalo en vez de leer código del producto. " if brief else "")
+    from .qa_script import approved_qa_cases
+
     scope = "Ejecuta todos los casos del QA Script. "
+    pending = len(plan["rerun"]) if plan and plan["carried"] else len(approved_qa_cases(state) or [])
+    # Each case adds screenshots, script output and code it read; later cases re-read all of it.
+    groups = (
+        f"Son {pending} casos: coordínalos por grupos. Agrupa 3 a 5 casos por historia o "
+        "superficie y ejecuta cada grupo con un subagente nuevo (Claude: herramienta Agent, "
+        "subagent_type general-purpose, sin model; Codex: spawn_agent con fork_turns=\"none\"), "
+        "UNO A LA VEZ y nunca en paralelo, porque comparten runtime, DB y datos sembrados. Dale el "
+        "spec, el brief, la skill de revisión, sus casos, runtime, URLs, SHA y las rutas de "
+        "evidencia; que devuelva por caso estado, resumen, capturas, salidas y persistencia. Tú no "
+        "ejecutas los casos: juntas los resultados y escribes qa-results.json tras cada grupo.\n"
+        if pending > QA_GROUP_THRESHOLD else "")
     if plan and plan["carried"]:
         carried = ", ".join(f"{qa_id} ({item['verifiedCommit'][:12]})"
                             for qa_id, item in sorted(plan["carried"].items()))
@@ -116,7 +193,7 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
         "scripts imprimen sólo un resumen corto por assertion (resultado, URL y ruta de la "
         "captura o salida); el DOM, la consola y las respuestas completas van a archivos bajo "
         "validation/, que lees sólo si una assertion falla.\n"
-        f"{scope}UI con la skill de revisión del modo y "
+        f"{groups}{scope}UI con la skill de revisión del modo y "
         "mobile-web-reviewer para teléfono; API/concurrencia con scripts contra el runtime. "
         "En Conductor la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB "
         "ni emulador nativo. Registra límites del SO como notas no bloqueantes, sin decir "
@@ -135,6 +212,8 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
         "200 o un toast no demuestran persistencia.\n"
         f"Escribe {root}/validation/qa-results.json con reviewSessionId igual al ID real "
         "de ESTA nueva conversación y un campo persistence por caso según fresh-qa.md. "
+        "Actualízalo después de cada caso terminado, con los casos hechos hasta ahora, y al "
+        "final con todos: si tu sesión se corta, lo ya resuelto no se repite. "
         "Guarda las capturas en validation/ui/<ID>-<NN>-<slug>.png y las salidas en "
         "validation/qa/<QA-ID>.txt; el motor las asocia por nombre, sin rutas en el JSON. "
         "Escribe en validation/notes.md una línea `<ID>: qué demuestra` por historia y caso. "
@@ -199,7 +278,8 @@ def _brief_path(state: dict[str, Any], brief: Path | None) -> str | None:
 
 def launch(state: dict[str, Any], workspace: str, implementation_session: str,
            urls: list[str], model: str | None = None, effort: str | None = None,
-           rerun: list[str] | None = None, brief: Path | None = None) -> dict[str, Any]:
+           rerun: list[str] | None = None, brief: Path | None = None,
+           replace: bool = False) -> dict[str, Any]:
     if effort and not model:
         raise RunBlocked("--effort for QA requires --model; without both, QA inherits the calling chat")
     if run_mode(state) != "conductor" or not state.get("observabilityVersion"):
@@ -229,7 +309,14 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
         if len(requested) > 1:
             raise RunBlocked("--rerun all cannot be combined with case IDs")
         requested = []
-    if all(previous.get(key) == value for key, value in pinned.items()):
+    same_candidate = all(previous.get(key) == value for key, value in pinned.items())
+    if replace and not same_candidate:
+        raise RunBlocked("--replace only replaces a stopped QA of this same commit; use --rerun")
+    if replace and requested:
+        raise RunBlocked("--replace already reruns only what the stopped QA left pending")
+    if replace and _status(cli, previous["reviewSessionId"]) == "working":
+        raise RunBlocked("The QA conversation is still working; wait for it with qa-wait")
+    if same_candidate and not replace:
         if requested and previous.get("rerunRequest") != requested:
             raise RunBlocked("A QA conversation already exists for this commit with another --rerun set")
         if previous.get("implementationSessionId") != implementation_session:
@@ -239,10 +326,14 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
                 f"The existing QA conversation uses a different agent/model/effort from the {source} configuration")
         return previous
     # Only a partial rerun reuses evidence; --rerun all and no --rerun keep the full QA.
-    plan = reuse_plan(state, pinned, requested) if requested else None
+    if replace:
+        plan = replacement_plan(state, pinned)
+    else:
+        plan = reuse_plan(state, pinned, requested) if requested else None
     if plan and not plan["carried"]:
         plan = None
-    contract = hashlib.sha256(json.dumps({**pinned, **configuration, "rerun": plan and plan["rerun"]},
+    contract = hashlib.sha256(json.dumps({**pinned, **configuration, "rerun": plan and plan["rerun"],
+                                          "replaces": previous.get("reviewSessionId") if replace else None},
                                          sort_keys=True).encode()).hexdigest()[:8]
     name = f"QA {state['runId']} {pinned['verifiedCommit'][:12]} {contract}"
     # Recover a created session after an interrupted response without duplicating the agent.
@@ -263,6 +354,8 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     entry.update({**configuration, "configurationSource": source, "workspaceId": workspace})
     if requested:
         entry["rerunRequest"] = requested
+    if replace:
+        entry["replaces"] = previous.get("reviewSessionId")
     if plan:
         entry.update({"rerun": plan["rerun"], "carried": plan["carried"]})
     save_state(state)

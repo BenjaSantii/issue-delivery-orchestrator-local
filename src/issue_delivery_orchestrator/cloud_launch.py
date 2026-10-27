@@ -366,10 +366,21 @@ def create_workspace(cli: str, launch: dict[str, Any]) -> dict[str, Any]:
 DELIVERY_SESSION_NAME = "Generador"
 
 
+SESSION_PAGE_SIZE = 100
+
+
 def workspace_sessions(cli: str, workspace_id: str) -> list[dict[str, Any]]:
-    return _json_output(
-        run([cli, "workspace", "session", workspace_id, "--json"]).stdout
-    ).get("data") or []
+    # Conductor pages this list (five by default); reading only the first page hid the calling
+    # chat and earlier QA conversations, so qa-session blocked and QA was relaunched by hand.
+    sessions: list[dict[str, Any]] = []
+    while True:
+        page = _json_output(run([cli, "workspace", "session", workspace_id, "--json",
+                                 "--limit", str(SESSION_PAGE_SIZE),
+                                 "--offset", str(len(sessions))]).stdout)
+        batch = page.get("data") or []
+        sessions += batch
+        if not page.get("hasMore") or not batch:
+            return sessions
 
 
 def first_session_id(cli: str, workspace_id: str, created: dict[str, Any] | None = None) -> str:
@@ -600,6 +611,8 @@ def resume_message(identifier: str) -> str:
         "4. Relee el spec, los tickets y la issue en Linear con `read-linear-issue` y continúa desde "
         "`nextAction`. Los permisos que di en la sesión anterior (por ejemplo LocalReviewer) no se "
         "heredan: pídelos de nuevo cuando corresponda.\n"
+        "5. Si había un QA registrado que se detuvo, levanta el runtime y retómalo con `qa-resume`; "
+        "si no puede continuar, usa `qa-session --replace`. No crees sesiones de QA a mano.\n"
     )
 
 
