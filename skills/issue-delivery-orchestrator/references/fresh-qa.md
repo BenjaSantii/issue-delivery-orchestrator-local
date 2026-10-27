@@ -132,3 +132,29 @@ con estado persistido distinto del esperado. El motor valida el recibo y los art
 ejecución real de las queries y la procedencia del contexto nativo se auditan con la sesión del
 host, no se prueban criptográficamente con un JSON. Mantener FAIL/BLOCKED y waivers del usuario.
 Reparar mediante Implement y repetir los casos invalidados desde una conversación independiente.
+
+## Reejecución parcial tras una reparación
+
+Un commit nuevo exige otra conversación de QA, pero no repetir todo el guion. Al crearla, el
+Generador lista los casos que su reparación puede afectar (los mismos que
+`issue-delivery-implement` declara invalidados) y los pasa con `--rerun`:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
+  --workspace <workspace-id> --implementation-session <session-id> \
+  --url http://localhost:<puerto> --rerun QA-002 --rerun QA-005
+```
+
+- Se reejecutan los casos pedidos, todo caso que no quedó `PASS` y los que falten. Los `PASS`
+  restantes se heredan con su commit y su evidencia; una cadena de reparaciones conserva el
+  commit original de cada caso.
+- El motor archiva el resultado anterior como `validation/qa-results-<commit12>.json` y registra
+  en `qaSession.carried` el origen de cada caso heredado. El nuevo QA escribe sólo los casos que
+  ejecuta y no toca la evidencia de los heredados.
+- Sólo se reutiliza si el spec y los tickets no cambiaron, el resultado anterior es del QA
+  registrado y su commit, y ese commit sigue siendo ancestro de HEAD. Si no, `qa-session`
+  devuelve BLOCKED y se repite sin `--rerun`.
+- Ante duda, `--rerun all`. Migraciones, schemas o contratos compartidos, auth/permisos y
+  cambios transversales (layout, navegación, datos sembrados) siempre usan `all`.
+- El checkpoint valida los heredados contra su archivo archivado (capturas, salidas y
+  persistencia) y el comentario de Linear indica qué casos se heredaron y de qué commit.

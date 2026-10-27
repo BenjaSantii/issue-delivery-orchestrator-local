@@ -6,7 +6,7 @@ from unittest.mock import patch
 import test_qa_script as qa_examples
 from issue_delivery_orchestrator import fresh_qa
 from issue_delivery_orchestrator.errors import OrchestrationError, RunBlocked
-from issue_delivery_orchestrator.qa_script import validate_qa_results
+from issue_delivery_orchestrator.qa_script import qa_comment_body, validate_qa_results
 from issue_delivery_orchestrator.qa_persistence import validate_persistence
 
 
@@ -230,3 +230,72 @@ class FreshQATests(unittest.TestCase):
         self.assertEqual((entry["model"], entry["effort"], entry["configurationSource"]),
                          ("sonnet-5-5-1m", "high", "explicit"))
         self.assertEqual(created[0][created[0].index("--model") + 1], "sonnet-5-5-1m")
+
+    def qa_round(self, review, keep, failing=()):
+        """Write this round's results for HEAD with only `keep` cases, as a partial rerun does."""
+        path = self.results()
+        data = json.loads(path.read_text())
+        data["reviewSessionId"] = review
+        data["verifiedCommit"] = qa_examples.git(self.fixture.worktree, "rev-parse", "HEAD")
+        data["cases"] = [dict(case, status="FAIL" if case["id"] in failing else case["status"])
+                         for case in data["cases"] if case["id"] in keep]
+        path.write_text(json.dumps(data))
+        return path
+
+    def repair(self, name):
+        worktree = self.fixture.worktree
+        (worktree / f"{name}.txt").write_text(name)
+        qa_examples.git(worktree, "add", ".")
+        qa_examples.git(worktree, "commit", "-m", name)
+
+    def rerun(self, *cases):
+        catalog = {"agents": [{"agent": "claude", "models": ["sonnet-5-5-1m"], "efforts": ["high"]}]}
+        entry, _ = self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog, rerun=list(cases))
+        return entry
+
+    def test_partial_rerun_carries_previous_pass_and_reruns_requested_and_failing_cases(self):
+        self.qa_round("review", {"QA-001", "QA-002", "QA-003"}, failing={"QA-003"})
+        self.repair("fix-1")
+        entry = self.rerun("QA-001")
+        self.assertEqual(entry["rerun"], ["QA-001", "QA-003"])
+        self.assertEqual(list(entry["carried"]), ["QA-002"])
+        archive = self.fixture.root / "validation" / f"qa-results-{self.fixture.head[:12]}.json"
+        self.assertTrue(archive.is_file())
+        result = validate_qa_results(self.state, self.qa_round(entry["reviewSessionId"], {"QA-001", "QA-003"}))
+        carried = {case["id"]: case for case in result["cases"] if case.get("carried")}
+        self.assertEqual(list(carried), ["QA-002"])
+        self.assertEqual(carried["QA-002"]["verifiedCommit"], self.fixture.head)
+        self.assertEqual(carried["QA-002"]["persistence"]["status"], "VERIFIED")
+        self.assertIn("Heredado de", qa_comment_body("run-1", result, {}, self.fixture.worktree))
+
+        # A second repair chains: QA-002 still comes from the first commit, QA-001 from the second.
+        second = entry["verifiedCommit"]
+        self.repair("fix-2")
+        entry = self.rerun("QA-003")
+        self.assertEqual(entry["rerun"], ["QA-003"])
+        self.assertEqual({k: v["verifiedCommit"] for k, v in entry["carried"].items()},
+                         {"QA-001": second, "QA-002": self.fixture.head})
+        result = validate_qa_results(self.state, self.qa_round(entry["reviewSessionId"], {"QA-003"}))
+        self.assertEqual(sorted(case["id"] for case in result["cases"] if case.get("carried")),
+                         ["QA-001", "QA-002"])
+        with self.assertRaisesRegex(OrchestrationError, "missing cases: QA-003"):
+            validate_qa_results(self.state, self.qa_round(entry["reviewSessionId"], set()))
+
+    def test_partial_rerun_is_refused_without_trustworthy_previous_results(self):
+        self.qa_round("other-chat", {"QA-001", "QA-002", "QA-003"})
+        self.repair("fix-1")
+        with self.assertRaisesRegex(RunBlocked, "another conversation or commit"):
+            self.rerun("QA-001")
+        self.qa_round("review", {"QA-001", "QA-002", "QA-003"})
+        (self.fixture.root / "validation" / "qa-results.json").write_text(json.dumps(
+            {**json.loads((self.fixture.root / "validation" / "qa-results.json").read_text()),
+             "verifiedCommit": self.fixture.head}))
+        self.state["qaSession"]["verifiedCommit"] = "0" * 40
+        with self.assertRaisesRegex(RunBlocked, "not an ancestor"):
+            self.rerun("QA-001")
+        self.state["qaSession"]["verifiedCommit"] = self.fixture.head
+        (self.fixture.worktree / self.state["artifacts"]["tickets"]).write_text("changed scope")
+        with self.assertRaisesRegex(RunBlocked, "spec or tickets changed"):
+            self.rerun("QA-001")
+        with self.assertRaisesRegex(RunBlocked, "cannot be combined"):
+            self.rerun("all", "QA-001")
