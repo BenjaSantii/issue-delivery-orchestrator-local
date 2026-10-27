@@ -193,8 +193,10 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
             raise OrchestrationError(f"QA results list {qa_id} twice")
         by_id[qa_id] = item
     expected = {case["QA ID"]: case for case in cases}
+    sources = {qa_id: (item, results["runtimeId"], head) for qa_id, item in by_id.items()}
+    sources.update(_carried_cases(state, root, worktree, set(expected) - set(by_id), runtimes))
     unknown = sorted(set(by_id) - set(expected))
-    missing = sorted(set(expected) - set(by_id))
+    missing = sorted(set(expected) - set(sources))
     if unknown:
         raise OrchestrationError(f"QA results contain cases not in the script: {', '.join(unknown)}")
     if missing:
@@ -204,7 +206,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
     failing = []
     normalized = []
     for qa_id, case in expected.items():
-        item = by_id[qa_id]
+        item, runtime_id, verified_commit = sources[qa_id]
         status = str(item.get("status") or "")
         if status not in RESULT_STATUSES:
             raise OrchestrationError(f"{qa_id} has invalid status {status or '<empty>'}")
@@ -222,6 +224,8 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
             "screenshots": [],
             "output": None,
         }
+        if verified_commit != head:
+            entry.update(carried=True, verifiedCommit=verified_commit)
         if status in {"FAIL", "BLOCKED"}:
             failing.append(f"{qa_id} {status}: {summary}")
         if status == "WAIVED":
@@ -268,7 +272,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
                     _reject_secrets(qa_id, (worktree / path).read_text(errors="replace"))
                     return str(path)
                 entry["persistence"] = validate_persistence(
-                    case, item, results["runtimeId"], persistence_file, worktree)
+                    case, item, runtime_id, persistence_file, worktree)
                 _reject_secrets(qa_id, str(entry["persistence"]))
         normalized.append(entry)
     if failing:
@@ -283,6 +287,36 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
         "reviewSessionId": results.get("reviewSessionId"),
         "cases": normalized,
     }
+
+
+def _carried_cases(
+    state: dict[str, Any], root: Path, worktree: Path, absent: set[str], runtimes: set[Any]
+) -> dict[str, tuple[dict[str, Any], str, str]]:
+    """PASS cases a partial rerun inherited, read back from the archived results they came from."""
+    carried = (state.get("qaSession") or {}).get("carried") or {}
+    found: dict[str, tuple[dict[str, Any], str, str]] = {}
+    archives: dict[str, dict[str, Any]] = {}
+    for qa_id in sorted(absent & set(carried)):
+        origin = carried[qa_id]
+        relative = str(origin.get("results") or "")
+        if relative not in archives:
+            archives[relative] = read_json(ensure_within(worktree / relative, root))
+        archived = archives[relative]
+        commit = str(origin.get("verifiedCommit") or "")
+        if archived.get("verifiedCommit") != commit or run(
+            ["git", "merge-base", "--is-ancestor", commit, "HEAD"], cwd=worktree, check=False
+        ).returncode != 0:
+            raise OrchestrationError(f"{qa_id} was inherited from {commit[:12]}, which is no longer "
+                                     "an ancestor of HEAD; QA must rerun it")
+        if archived.get("runtimeId") not in runtimes:
+            raise OrchestrationError(
+                f"{qa_id} inherited results reference unregistered runtime {archived.get('runtimeId')}")
+        item = next((case for case in archived.get("cases") or []
+                     if isinstance(case, dict) and case.get("id") == qa_id), None)
+        if not item or item.get("status") != "PASS":
+            raise OrchestrationError(f"{qa_id} has no inherited PASS in {relative}")
+        found[qa_id] = (item, archived["runtimeId"], commit)
+    return found
 
 
 def qa_comment_body(
@@ -328,14 +362,20 @@ def _qa_summary(run_id: str, results: dict[str, Any]) -> list[str]:
     for case in results["cases"]:
         icon = {"PASS": "✅", "WAIVED": "⚪"}.get(case["status"], "❌")
         summary = case["summary"].replace("|", "\\|").replace("\n", " ")
+        if case.get("carried"):
+            summary = f"Heredado de `{case['verifiedCommit'][:12]}`: {summary}"
         rows.append(
             f"| {case['id']} | {case['type']} | {case['surface']} | {case['covers']} "
             f"| {icon} {case['status']} | {summary} |"
         )
+    carried = [case["id"] for case in results["cases"] if case.get("carried")]
+    reuse = ["", f"Casos heredados sin reejecutar, verificados en un commit anterior: "
+                 f"{', '.join(carried)}"] if carried else []
     return [
         f"### {qa_comment_marker(run_id)}",
         "",
         f"Commit `{results['verifiedCommit'][:12]}` · runtime `{results['runtimeId']}`",
+        *reuse,
         "",
         "| Caso | Tipo | Superficie | Cubre | Estado | Observado |",
         "| -- | -- | -- | -- | -- | -- |",

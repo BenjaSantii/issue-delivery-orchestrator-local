@@ -132,7 +132,9 @@ Guardar `validation/qa-results.json` dentro del run:
   `validation/ui/<QA-ID>*.png`, `validation/qa/<QA-ID>.txt|.json` y la línea `<QA-ID>:` de
   `validation/notes.md`.
 - `FAIL` y `BLOCKED` impiden cerrar la revisión manual: reparar con `issue-delivery-implement`,
-  invalidar sólo los casos afectados y repetirlos.
+  invalidar sólo los casos afectados y repetirlos en un QA nuevo con `qa-session --rerun`
+  (ver "Reejecución parcial" en fresh-qa.md). Ese resultado lista sólo los casos reejecutados;
+  los heredados se validan desde `validation/qa-results-<commit12>.json`.
 - `WAIVED` sólo cuando el usuario decide explícitamente no exigir ese caso. Pedirlo en el chat
   con la causa y registrar `"waiver": {"reason": "...", "userInstruction": "<sus palabras>"}`.
 
