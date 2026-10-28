@@ -611,7 +611,8 @@ def resume_message(identifier: str) -> str:
         "4. Relee el spec, los tickets y la issue en Linear con `read-linear-issue` y continúa desde "
         "`nextAction`. Los permisos que di en la sesión anterior (por ejemplo LocalReviewer) no se "
         "heredan: pídelos de nuevo cuando corresponda.\n"
-        "5. Si había un QA registrado que se detuvo, levanta el runtime y retómalo con `qa-resume`; "
+        "5. Si había un QA registrado que se detuvo, levanta el runtime con `runtime-restore` y "
+        "retómalo con `qa-resume`; "
         "si no puede continuar, usa `qa-session --replace`. No crees sesiones de QA a mano.\n"
     )
 
@@ -699,8 +700,9 @@ def recover_message() -> str:
         "Tu sesión se cortó por el límite de uso y ya hay límite disponible. Retoma donde quedaste.\n\n"
         "1. Si hay una versión más nueva del plugin, actualízala con `CODEX_TOOLBOX_PROFILE=<perfil> "
         "pnpm conductor:toolbox` y usa su ruta como `<plugin-root>`.\n"
-        "2. La VM pudo reiniciarse mientras estabas detenido: comprueba que los servicios del "
-        "runtime respondan sobre el mismo SHA y levántalos si cayeron.\n"
+        "2. La VM pudo reiniciarse mientras estabas detenido: ejecuta `runtime-restore`, que "
+        "levanta el runtime con la receta del run y comprueba el SHA. Si el run no tiene receta, "
+        "levántalo a mano y regístrala con `runtime-recipe`.\n"
         "3. Si esperabas un QA y no terminó, retómalo con `qa-resume --note <ruta>` contando qué "
         "restauraste (o `qa-session --replace` si su chat no puede seguir) y vuelve a esperarlo con "
         "`qa-wait` en segundo plano. No crees sesiones de QA a mano.\n"
