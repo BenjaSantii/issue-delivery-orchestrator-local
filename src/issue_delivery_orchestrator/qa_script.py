@@ -226,6 +226,9 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
         }
         if verified_commit != head:
             entry.update(carried=True, verifiedCommit=verified_commit)
+            equivalent = ((state.get("qaSession") or {}).get("carried") or {}).get(qa_id, {}).get("equivalentCommit")
+            if equivalent:
+                entry["equivalentCommit"] = equivalent
         if status in {"FAIL", "BLOCKED"}:
             failing.append(f"{qa_id} {status}: {summary}")
         if status == "WAIVED":
@@ -303,8 +306,10 @@ def _carried_cases(
             archives[relative] = read_json(ensure_within(worktree / relative, root))
         archived = archives[relative]
         commit = str(origin.get("verifiedCommit") or "")
+        # A rebase rewrites the commit; qa-rebase records the patch-identical commit that replaced it.
+        anchor = str(origin.get("equivalentCommit") or commit)
         if archived.get("verifiedCommit") != commit or run(
-            ["git", "merge-base", "--is-ancestor", commit, "HEAD"], cwd=worktree, check=False
+            ["git", "merge-base", "--is-ancestor", anchor, "HEAD"], cwd=worktree, check=False
         ).returncode != 0:
             raise OrchestrationError(f"{qa_id} was inherited from {commit[:12]}, which is no longer "
                                      "an ancestor of HEAD; QA must rerun it")
@@ -363,7 +368,8 @@ def _qa_summary(run_id: str, results: dict[str, Any]) -> list[str]:
         icon = {"PASS": "✅", "WAIVED": "⚪"}.get(case["status"], "❌")
         summary = case["summary"].replace("|", "\\|").replace("\n", " ")
         if case.get("carried"):
-            summary = f"Heredado de `{case['verifiedCommit'][:12]}`: {summary}"
+            rebase = " (mismo parche tras un rebase)" if case.get("equivalentCommit") else ""
+            summary = f"Heredado de `{case['verifiedCommit'][:12]}`{rebase}: {summary}"
         rows.append(
             f"| {case['id']} | {case['type']} | {case['surface']} | {case['covers']} "
             f"| {icon} {case['status']} | {summary} |"

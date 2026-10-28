@@ -86,7 +86,10 @@ python3 <plugin-root>/scripts/issue-delivery LOG-376 cloud-recover --confirm  # 
 ```
 
 Revisa el último chat que implementa y el último QA de cada workspace activo (`all`) o de una
-issue. Si alguno quedó inactivo con el aviso de límite, envía un mensaje al chat que implementa:
+issue. Detecta el corte con el último evento de límite de la conversación (ventana de 5 horas o
+semanal al 98 % o más, o rechazada) y, como respaldo, con el aviso de límite. El plan muestra el
+uso de cada ventana y su hora de reinicio: si no cambiaste de cuenta y la ventana aún no se
+reinicia, retomar ahora vuelve a cortarse. Si alguno quedó cortado, envía un mensaje al chat que implementa:
 revisar el runtime, retomar el QA con `qa-resume` y volver a `qa-wait`. No escribe a un workspace
 cuyo chat que implementa sigue trabajando. Ejecutarlo cuando el límite ya esté disponible (cambio
 de cuenta o reinicio); el plan muestra la hora de reinicio que dio cada chat. Lee las

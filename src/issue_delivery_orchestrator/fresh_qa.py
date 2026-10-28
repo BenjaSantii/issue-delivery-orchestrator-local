@@ -9,6 +9,7 @@ from typing import Any
 
 from .cloud_launch import _json_output, conductor_cli, workspace_sessions
 from .errors import RunBlocked
+from .stack import integration_ref
 from .state import now, run_mode, run_root, save_state
 from .util import ensure_within, run
 
@@ -83,6 +84,84 @@ def reuse_plan(state: dict[str, Any], pinned: dict[str, str], requested: list[st
         else:
             rerun.append(qa_id)
     return {"rerun": rerun, "carried": carried}
+
+
+def _base(state: dict[str, Any], commit: str) -> str | None:
+    """Where the branch's own patch starts: its merge-base with the integration target."""
+    result = run(["git", "merge-base", commit, integration_ref(state)],
+                 cwd=Path(state["worktree"]), check=False)
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
+def _patch_id(worktree: Path, base: str, commit: str) -> str:
+    diff = run(["git", "diff", "--binary", base, commit], cwd=worktree).stdout
+    if not diff.strip():
+        return ""
+    return (run(["git", "patch-id", "--stable"], cwd=worktree, input_text=diff).stdout.split() or [""])[0]
+
+
+def rebase(state: dict[str, Any], *, old_base: str | None = None,
+           rerun: list[str] | None = None) -> dict[str, Any]:
+    """Re-pin a finished QA to the rebased HEAD when the branch's own patch did not change."""
+    from .qa_script import approved_qa_cases
+
+    worktree = Path(state["worktree"])
+    root = run_root(worktree, state["runId"])
+    entry = state.get("qaSession") or {}
+    old = entry.get("verifiedCommit")
+    if not entry.get("reviewSessionId") or not old:
+        raise RunBlocked("No QA conversation is registered; run qa-session first")
+    pinned = snapshot(state)
+    if any(entry.get(key) != pinned[key] for key in ("specSha256", "ticketsSha256")):
+        raise RunBlocked("The approved spec or tickets changed; QA must rerun every case")
+    head = pinned["verifiedCommit"]
+    if head == old:
+        raise RunBlocked("QA is already pinned to HEAD; nothing to re-pin")
+    if run(["git", "merge-base", "--is-ancestor", old, head], cwd=worktree, check=False).returncode == 0:
+        raise RunBlocked("HEAD descends from the QA commit, so code changed; use qa-session --rerun")
+    old_base = old_base or entry.get("baseCommit")
+    new_base = _base(state, head)
+    if not old_base or not new_base:
+        raise RunBlocked("Cannot find the bases of the old and new patch; pass --old-base <sha>")
+    if not _patch_id(worktree, old_base, old) or _patch_id(worktree, old_base, old) != _patch_id(
+            worktree, new_base, head):
+        raise RunBlocked("The rebase changed the branch's own patch; QA must run again for HEAD")
+    current = root / "validation" / "qa-results.json"
+    try:
+        results = json.loads(current.read_text())
+    except (ValueError, OSError) as error:
+        raise RunBlocked("The QA left no readable results to re-pin") from error
+    if results.get("reviewSessionId") != entry["reviewSessionId"] or results.get("verifiedCommit") != old:
+        raise RunBlocked("The QA results belong to another conversation or commit")
+    expected = [case["QA ID"] for case in approved_qa_cases(state) or []]
+    requested = sorted(set(rerun or []))
+    unknown = sorted(set(requested) - set(expected))
+    if unknown:
+        raise RunBlocked(f"--rerun names cases outside the QA Script: {', '.join(unknown)}")
+    archived = root / "validation" / f"qa-results-{old[:12]}-{entry['reviewSessionId'][:8]}.json"
+    current.replace(archived)
+    relative = str(archived.resolve().relative_to(worktree.resolve()))
+    statuses = {str(item.get("id")): item.get("status") for item in results.get("cases") or []
+                if isinstance(item, dict)}
+    inherited = entry.get("carried") or {}
+    carried, pending = {}, []
+    for qa_id in expected:
+        if qa_id not in requested and statuses.get(qa_id) == "PASS":
+            carried[qa_id] = {"verifiedCommit": old, "equivalentCommit": head, "results": relative}
+        elif qa_id not in requested and qa_id not in statuses and qa_id in inherited:
+            carried[qa_id] = {**inherited[qa_id], "equivalentCommit": head}
+        else:
+            pending.append(qa_id)
+    # The engine writes HEAD's file: no case ran again, every one is carried from the patch-identical commit.
+    current.write_text(json.dumps({
+        "qaVersion": 1, "verifiedCommit": head, "runtimeId": results.get("runtimeId"),
+        "reviewSessionId": entry["reviewSessionId"], "verifiedAt": now(), "rebasedFrom": old,
+        "cases": []}, indent=2) + "\n")
+    entry.update({"verifiedCommit": head, "baseCommit": new_base, "carried": carried, "rerun": pending})
+    entry.setdefault("rebasedFrom", []).append(old)
+    save_state(state)
+    return {"verifiedCommit": head, "rebasedFrom": old, "carried": sorted(carried), "pending": pending,
+            "next": "qa-session --replace to run the pending cases" if pending else "checkpoint"}
 
 
 def replacement_plan(state: dict[str, Any], pinned: dict[str, str]) -> dict[str, Any] | None:
@@ -351,7 +430,8 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
         raise RunBlocked(f"QA session model/effort does not match the {source} configuration")
     entry = register(state, implementation_session, selected["id"],
                      host_receipt=f"conductor-workspace:{workspace}", pinned=pinned)
-    entry.update({**configuration, "configurationSource": source, "workspaceId": workspace})
+    entry.update({**configuration, "configurationSource": source, "workspaceId": workspace,
+                  "baseCommit": _base(state, "HEAD")})
     if requested:
         entry["rerunRequest"] = requested
     if replace:

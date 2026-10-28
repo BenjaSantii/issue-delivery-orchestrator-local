@@ -650,13 +650,48 @@ def last_items(cli: str, session_id: str, count: int = 40) -> list[Any]:
         offset += len(batch)
 
 
-def stop_reason(cli: str, session_id: str) -> dict[str, Any] | None:
-    """Why an idle chat stopped mid-task, when its last assistant words say so."""
-    texts = _assistant_texts(last_items(cli, session_id))
-    match = _LIMIT.search(texts[-1]) if texts else None
-    if not match:
+# At or above this share of a window the next request is refused; Conductor logs 0.99 just before.
+LIMIT_UTILIZATION = 0.98
+
+
+def _iso(epoch: Any) -> str | None:
+    if not isinstance(epoch, (int, float)):
         return None
-    return {"reason": "usage-limit", "resets": (match.group(1) or "").strip() or None}
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def rate_limits(items: list[Any]) -> dict[str, Any] | None:
+    """The latest structured rate-limit event of a transcript tail, per window."""
+    for item in reversed(items):
+        payload = ((item or {}).get("content") or {}).get("rawPayload") or {}
+        info = payload.get("rate_limit_info") if payload.get("type") == "rate_limit_event" else None
+        if not isinstance(info, dict):
+            continue
+        windows = {name: {"utilization": window.get("utilization"), "resetsAt": _iso(window.get("resetsAt"))}
+                   for name, window in (info.get("unifiedWindows") or {}).items() if isinstance(window, dict)}
+        return {"status": info.get("status"), "window": info.get("rateLimitType"),
+                "resetsAt": _iso(info.get("resetsAt")), "windows": windows}
+    return None
+
+
+def stop_reason(cli: str, session_id: str) -> dict[str, Any] | None:
+    """Why an idle chat stopped mid-task: the rate-limit event first, its last words as fallback."""
+    items = last_items(cli, session_id, 80)
+    limits = rate_limits(items)
+    texts = _assistant_texts(items)
+    match = _LIMIT.search(texts[-1]) if texts else None
+    exhausted = [name for name, window in (limits or {}).get("windows", {}).items()
+                 if isinstance(window.get("utilization"), (int, float))
+                 and window["utilization"] >= LIMIT_UTILIZATION]
+    rejected = (limits or {}).get("status") not in (None, "allowed", "allowed_warning")
+    if not (match or exhausted or rejected):
+        return None
+    reset = None
+    if exhausted:
+        reset = limits["windows"][exhausted[0]]["resetsAt"]
+    return {"reason": "usage-limit", "resets": reset or (match.group(1).strip() if match and match.group(1) else None)
+            or (limits or {}).get("resetsAt"), "window": exhausted[0] if exhausted else (limits or {}).get("window"),
+            "limits": limits}
 
 
 def recover_message() -> str:

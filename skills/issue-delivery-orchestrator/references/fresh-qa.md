@@ -196,3 +196,21 @@ python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
   cambios transversales (layout, navegación, datos sembrados) siempre usan `all`.
 - El checkpoint valida los heredados contra su archivo archivado (capturas, salidas y
   persistencia) y el comentario de Linear indica qué casos se heredaron y de qué commit.
+
+## Tras un rebase o restack
+
+Un `restack` o un rebase cambia el commit aunque el parche de la rama sea el mismo, y el QA está
+fijado a un commit. No repetir el QA ni marcar casos como WAIVED por eso. Con el QA terminado:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-rebase [--rerun <QA-ID>] [--old-base <sha>]
+```
+
+El motor compara el parche propio de la rama antes y después (`git patch-id` contra su base) y, si
+es idéntico y el spec y los tickets no cambiaron, fija el QA al nuevo HEAD: cada PASS se hereda
+del commit equivalente y el comentario lo indica. Antes, revisar qué cambió entre la base vieja y
+la nueva (`git diff --stat <base-vieja> <base-nueva>`): si toca la superficie de un caso, pasarlo
+con `--rerun` y ejecutarlo con `qa-session ... --replace`. Si el parche cambió, el comando bloquea
+y el QA corre de nuevo para HEAD. Los runs que registraron el QA antes de esta versión no guardan
+la base: pasarla con `--old-base` (la punta de la rama padre o el merge-base de entonces).
+

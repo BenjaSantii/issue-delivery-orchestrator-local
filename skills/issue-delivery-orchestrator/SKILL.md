@@ -290,6 +290,8 @@ padre en un stack, o `pr_target_branch` en cualquier otro caso.
 sobre su padre (o sobre la target después del merge del padre) con `--force-with-lease`, y
 `slice-extract` reordena commits propios antes del primer push. No reproducir estas operaciones
 con git a mano.
+Si un `restack` ocurre después de un QA terminado, fijar el QA al nuevo HEAD con `qa-rebase`
+("Tras un rebase o restack" en fresh-qa.md); no repetir el QA ni marcar sus casos como WAIVED.
 
 ## 4. Revisión manual
 

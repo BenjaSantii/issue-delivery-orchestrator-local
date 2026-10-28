@@ -16,7 +16,7 @@ from .usage import conductor_usage
 from .util import ensure_within, read_json, run
 
 ACTIONS = {"metrics-start", "metrics-finish", "metrics-usage", "metrics-session",
-           "publish-metrics", "qa-session", "qa-register", "qa-wait", "qa-resume"}
+           "publish-metrics", "qa-session", "qa-register", "qa-wait", "qa-resume", "qa-rebase"}
 IDLE_POLL_SECONDS = 30
 QA_WAIT_MINUTES = 360
 
@@ -56,6 +56,11 @@ def configure(actions: Any) -> None:
                     help="Run file with routes, accounts and seeded data for the QA reviewer")
     qa.add_argument("--replace", action="store_true",
                     help="Replace a stopped QA of this commit, keeping the cases it settled")
+    rebased = actions.add_parser(
+        "qa-rebase", help="Re-pin a finished QA to HEAD after a rebase that kept the branch's patch")
+    rebased.add_argument("--old-base", help="Base of the QA commit's patch, for runs that did not record it")
+    rebased.add_argument("--rerun", action="append", metavar="QA-ID",
+                         help="Case the new base can affect; it reruns with qa-session --replace")
     awaken = actions.add_parser("qa-resume", help="Resume the registered QA chat after it stopped")
     awaken.add_argument("--note", type=Path, help="Run file with what the controller restored")
     wait = actions.add_parser("qa-wait", help="Block until the registered QA chat stops working")
@@ -166,6 +171,8 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
                                args.replace)
     if args.action == "qa-resume":
         return fresh_qa.resume(state, args.note)
+    if args.action == "qa-rebase":
+        return fresh_qa.rebase(state, old_base=args.old_base, rerun=args.rerun)
     if args.action == "qa-wait":
         return wait_for_qa(state, args.timeout_minutes)
     if run_mode(state) == "conductor":

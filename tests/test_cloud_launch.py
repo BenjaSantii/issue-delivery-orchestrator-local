@@ -648,7 +648,7 @@ class RecoveryTests(unittest.TestCase):
         with patch.object(cloud_launch, "workspace_sessions", return_value=sessions), patch.object(
             cloud_launch, "run", side_effect=fake_run
         ), patch.object(cloud_launch, "last_items",
-                        side_effect=lambda _cli, sid: [{"type": "text", "text": texts.get(sid, "Listo.")}]):
+                        side_effect=lambda _cli, sid, *_: [{"type": "text", "text": texts.get(sid, "Listo.")}]):
             return cloud_launch.recovery_plan("conductor", [{"id": "ws", "name": "[LOG-1] Algo"}])
 
     def test_wakes_the_latest_implementation_chat_when_it_or_its_qa_hit_the_limit(self):
@@ -672,3 +672,28 @@ class RecoveryTests(unittest.TestCase):
         message = __import__("issue_delivery_orchestrator.cloud_launch", fromlist=["x"]).recover_message()
         self.assertIn("qa-resume", message)
         self.assertIn("sleep", message)
+
+
+class RateLimitTests(unittest.TestCase):
+    def event(self, five, seven, status="allowed_warning"):
+        return {"content": {"rawPayload": {"type": "rate_limit_event", "rate_limit_info": {
+            "status": status, "rateLimitType": "five_hour", "resetsAt": 1793131200,
+            "unifiedWindows": {"five_hour": {"utilization": five, "resetsAt": 1793131200},
+                               "seven_day": {"utilization": seven, "resetsAt": 1793289600}}}}}}
+
+    def reason(self, items):
+        from issue_delivery_orchestrator import cloud_launch
+        with patch.object(cloud_launch, "last_items", return_value=items):
+            return cloud_launch.stop_reason("conductor", "s")
+
+    def test_exhausted_window_is_a_stop_even_without_the_limit_text(self):
+        result = self.reason([self.event(0.99, 0.5), {"type": "text", "text": "Sigo con QA-004."}])
+        self.assertEqual((result["reason"], result["window"]), ("usage-limit", "five_hour"))
+        self.assertEqual(result["resets"], "2026-10-27T20:00:00Z")
+        self.assertEqual(result["limits"]["windows"]["seven_day"]["utilization"], 0.5)
+
+    def test_text_still_detects_a_stop_and_a_healthy_window_is_not_one(self):
+        self.assertIsNone(self.reason([self.event(0.3, 0.8), {"type": "text", "text": "Listo."}]))
+        text = {"type": "text", "text": "You've hit your session limit · resets 11pm (UTC)"}
+        self.assertEqual(self.reason([self.event(0.3, 0.8), text])["reason"], "usage-limit")
+        self.assertEqual(self.reason([self.event(0.3, 0.5, status="rejected")])["reason"], "usage-limit")

@@ -401,3 +401,54 @@ class FreshQATests(unittest.TestCase):
             prompt = fresh_qa.qa_prompt(self.state, pinned, ["http://localhost:3000"])
         self.assertIn("subagente nuevo", prompt)
         self.assertIn("UNO A LA VEZ", prompt)
+
+    def rebased_branch(self, *, change_patch=False):
+        """QA passes on a feature commit, then the branch is rebased onto a moved base."""
+        worktree, git = self.fixture.worktree, qa_examples.git
+        git(worktree, "branch", "base")
+        (worktree / "feature.txt").write_text("feature\n")
+        git(worktree, "add", "."); git(worktree, "commit", "-m", "feature")
+        fresh_qa.register(self.state, "implementation", "review", host_receipt="fixture")
+        self.state["qaSession"]["baseCommit"] = self.fixture.head
+        self.qa_round("review", {"QA-001", "QA-002", "QA-003"})
+        old = git(worktree, "rev-parse", "HEAD")
+        git(worktree, "checkout", "-q", "base")
+        (worktree / "other.txt").write_text("merged parent\n")
+        git(worktree, "add", "."); git(worktree, "commit", "-m", "parent merged")
+        git(worktree, "checkout", "-q", "test")
+        git(worktree, "rebase", "-q", "base")
+        if change_patch:
+            (worktree / "feature.txt").write_text("feature changed\n")
+            git(worktree, "commit", "-qam", "change", "--amend")
+        return old
+
+    def test_rebase_with_identical_patch_carries_every_pass_without_new_qa(self):
+        old = self.rebased_branch()
+        with patch("issue_delivery_orchestrator.fresh_qa.integration_ref", return_value="base"):
+            outcome = fresh_qa.rebase(self.state)
+        self.assertEqual((outcome["pending"], outcome["next"]), ([], "checkpoint"))
+        self.assertEqual(outcome["carried"], ["QA-001", "QA-002", "QA-003"])
+        results = self.fixture.root / "validation" / "qa-results.json"
+        validated = validate_qa_results(self.state, results)
+        self.assertTrue(all(case["carried"] and case["equivalentCommit"] for case in validated["cases"]))
+        self.assertEqual({case["verifiedCommit"] for case in validated["cases"]}, {old})
+        self.assertIn("mismo parche", qa_comment_body("run-1", validated, {}, self.fixture.worktree))
+
+    def test_rebase_reruns_only_cases_the_new_base_can_affect(self):
+        self.rebased_branch()
+        with patch("issue_delivery_orchestrator.fresh_qa.integration_ref", return_value="base"):
+            outcome = fresh_qa.rebase(self.state, rerun=["QA-002"])
+            entry, created = self.replace(implementation="implementation")
+        self.assertEqual(outcome["pending"], ["QA-002"])
+        self.assertEqual(entry["rerun"], ["QA-002"])
+        self.assertEqual(sorted(entry["carried"]), ["QA-001", "QA-003"])
+        self.assertEqual(len(created), 1)
+
+    def test_rebase_refuses_a_changed_patch_or_plain_new_commits(self):
+        self.rebased_branch(change_patch=True)
+        with patch("issue_delivery_orchestrator.fresh_qa.integration_ref", return_value="base"):
+            with self.assertRaisesRegex(RunBlocked, "changed the branch's own patch"):
+                fresh_qa.rebase(self.state)
+        self.state["qaSession"]["verifiedCommit"] = self.fixture.head
+        with self.assertRaisesRegex(RunBlocked, "--rerun"):
+            fresh_qa.rebase(self.state)
