@@ -101,7 +101,7 @@ from .state import (
     now,
 )
 from .util import ensure_within, run
-from . import implement_worker, observability_cli
+from . import implement_worker, observability_cli, runtime_recipe
 
 
 def parser() -> argparse.ArgumentParser:
@@ -217,6 +217,16 @@ def parser() -> argparse.ArgumentParser:
 
     runtime = actions.add_parser("runtime-init")
     runtime.add_argument("--fresh", action="store_true")
+
+    recipe = actions.add_parser(
+        "runtime-recipe",
+        help="Register the run's start-up recipe for its Local Runtime services",
+    )
+    recipe.add_argument("--file", type=Path, required=True)
+    actions.add_parser(
+        "runtime-restore",
+        help="Bring the recorded runtime services back after a VM restart or a lost binding",
+    )
 
     process = actions.add_parser("register-process")
     process.add_argument("--pid", type=int, required=True)
@@ -426,6 +436,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return _public_state(state)
     if args.action == "runtime-init":
         return initialize_runtime(state, fresh=args.fresh)
+    if args.action == "runtime-recipe":
+        return runtime_recipe.register_recipe(state, args.file)
+    if args.action == "runtime-restore":
+        return runtime_recipe.restore(state)
     if args.action == "register-process":
         register_owned_process(
             state,
