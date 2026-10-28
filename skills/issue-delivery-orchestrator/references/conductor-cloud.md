@@ -30,6 +30,10 @@ No imprimir valores de secretos; comprobar sólo su presencia.
 5. **Servicios.** `pnpm cloud:services:ensure` (Postgres y Redis) antes de cualquier
    `pnpm local-runtime ensure-services`. Tras un cambio de `package.json`, ejecutar
    `corepack pnpm install --frozen-lockfile`.
+   La VM puede reiniciarse mientras los chats están detenidos (por ejemplo por límite de uso) y
+   apagar Postgres, Redis y las apps. Tras registrar la receta del runtime con `runtime-recipe`,
+   recuperarlo con `runtime-restore`: reescribe el binding perdido, salta lo que ya responde,
+   arranca lo caído en orden y devuelve una línea por servicio y la cola del log si falla.
 6. **Navegador.** Ejecutar
    `node <plugin-root>/scripts/playwright-review/preflight.mjs --worktree <checkout>`. Si Chromium
    falta, instalarlo con `corepack pnpm exec playwright install chromium` y repetir. En esta VM

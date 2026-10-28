@@ -321,6 +321,12 @@ el reviewer web persistido y conserva los demás gates.
    ```
 
 2. Levantar sólo las apps necesarias mediante `pnpm local-runtime` o `pnpm agent:*`, registrar sus PID y usar el runtime activo.
+   Cuando el runtime responda por primera vez, escribir en el run la receta que funcionó
+   (servicios en orden de arranque, cada uno con `start`, `health` y `timeoutSeconds`) y
+   registrarla con `runtime-recipe --file <ruta>`. Los secretos se leen con comandos dentro de
+   `start` (`export JWT_SECRET=$(...)`), nunca como valores literales. Tras un reinicio de la VM,
+   una reanudación o la pérdida del binding del runtime, ejecutar `runtime-restore` en vez de
+   reconstruir el arranque a mano; si bloquea, corregir la receta con lo aprendido y repetir.
 3. Ramificar exclusivamente por `developmentMode`:
 
    - `superset` o `vanilla`: invocar `issue-delivery-cua-review` desde el checkout adoptado.
