@@ -54,6 +54,8 @@ def configure(actions: Any) -> None:
                     help="After a repair, rerun only these cases and carry the previous PASS ones")
     qa.add_argument("--brief", type=Path,
                     help="Run file with routes, accounts and seeded data for the QA reviewer")
+    qa.add_argument("--user-approved", metavar="TEXT",
+                    help="The user's words allowing one QA round after manual revision")
     qa.add_argument("--replace", action="store_true",
                     help="Replace a stopped QA of this commit, keeping the cases it settled")
     rebased = actions.add_parser(
@@ -168,7 +170,7 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
     if args.action == "qa-session":
         return fresh_qa.launch(state, args.workspace, args.implementation_session,
                                args.url, args.model, args.effort, args.rerun, args.brief,
-                               args.replace)
+                               args.replace, args.user_approved)
     if args.action == "qa-resume":
         return fresh_qa.resume(state, args.note)
     if args.action == "qa-rebase":

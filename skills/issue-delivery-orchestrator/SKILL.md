@@ -178,6 +178,9 @@ Considerar ciclo de reparación toda instrucción que pida ajustar, corregir o c
 7. Si la verificación detecta un fallo, volver a `issue-delivery-implement` y repetir. Delegar la detección de ciclos y el límite de dos iteraciones fallidas a `pr-blocker-convergence`.
 8. Considerar obsoleta sólo la evidencia cuya superficie pueda verse afectada por el último cambio. Actualizar capturas publicadas cuando corresponda.
 
+Excepción para PR y convergencia de blockers: no correr QA ni reviewer UI sin que el usuario autorice
+una ronda (ver Convergencia remota); la evidencia de esos cambios son tests y paridad con CI.
+
 Prohibir el handoff hasta disponer de evidencia posterior al último cambio para cada superficie afectada, con SHA verificado. Para UI, exigir PASS del reviewer del modo; para las demás, exigir el test, comando o análisis declarado en el ledger. Si la herramienta necesaria no está disponible, bloquear y explicar el impedimento; no degradar la cobertura.
 
 ## 1. Grill
@@ -484,7 +487,10 @@ y sólo la sección `BLOCKERS` de los `blockerBots` (x100 en TurboShop); ignorar
 opcionales y comentarios humanos durante el ciclo automático.
 
 1. Entregar el snapshot completo a `pr-blocker-convergence`; esa skill agrega nuevos blockers, deduplica por causa raíz y decide `FIX`, `SKIP`, `NEEDS_USER_DECISION` o `STOP`.
-2. Reparar automáticamente cada `FIX/MODEL` con un worker nuevo: guardar el blocker en el run y
+2. Sin QA por blockers: Durante PR y convergencia de blockers no se ejecuta QA ni revisión UI de forma automática: la evidencia de cada `FIX` son los tests focales y la paridad con CI. Si un `FIX` puede cambiar algo que un caso del QA Script o una historia UI observa, registrarlo en el ledger, nombrar esos casos y pedir al usuario que autorice una ronda; sólo con su autorización correr `qa-session ... --rerun <casos> --user-approved "<sus palabras>"`. Nunca repetir el QA completo por blockers salvo que el usuario lo pida.
+   `publish-run` ya no exige un QA nuevo tras estos pushes, y el bloque de validación de la PR indica en
+   qué commit se verificó el QA.
+   Reparar automáticamente cada `FIX/MODEL` con un worker nuevo: guardar el blocker en el run y
    ejecutar `implement-package --finding <ruta>` (con `--ticket` sólo si pertenece a uno). Agrupar
    en un mismo worker los `FIX` de una misma causa raíz. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI sobre el delta completo y hacer un único push por ronda. Inmediatamente después del push, regenerar `validation/pr-validation.md` y ejecutar `publish-run` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
 3. Si una solicitud exige negocio, arquitectura incompatible o cambiar un acuerdo vigente, registrar `NEEDS_USER_DECISION`, completar primero trabajo independiente seguro y pausar.

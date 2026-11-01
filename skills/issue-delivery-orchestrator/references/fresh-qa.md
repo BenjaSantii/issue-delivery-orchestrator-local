@@ -214,3 +214,11 @@ con `--rerun` y ejecutarlo con `qa-session ... --replace`. Si el parche cambió,
 y el QA corre de nuevo para HEAD. Los runs que registraron el QA antes de esta versión no guardan
 la base: pasarla con `--old-base` (la punta de la rama padre o el merge-base de entonces).
 
+## Después de la revisión manual
+
+Una vez completada la revisión manual, el QA no se repite por blockers de review o de CI: `publish-run`
+omite republicar un QA de un commit anterior y la validación de la PR dice en qué commit se verificó.
+En las fases `pr-creation` y `review-convergence`, `qa-session` bloquea salvo que el usuario autorice una
+ronda: pasar sus palabras con `--user-approved` y sólo los casos que el cambio puede afectar con
+`--rerun`. Un `qa-rebase` tras un restack no ejecuta QA y no necesita autorización.
+

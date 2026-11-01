@@ -136,6 +136,20 @@ class PrQualityTests(unittest.TestCase):
         with self.assertRaises(RunBlocked):
             publish_validation(self.state, unpushed, github)
 
+    def test_validation_says_which_commit_the_qa_verified(self):
+        github = Mock()
+        github.body.return_value = ""
+        self.state["qa"] = {"verifiedCommit": self.sha}
+        publish_validation(self.state, self._receipt("v.md", f"SHA: {self.sha}\n"), github)
+        self.assertIn("verificado en este commit", Path(github.edit_body.call_args.args[1]).read_text())
+        self._commit()
+        _git(self.worktree, "push", "-q")
+        head = _git(self.worktree, "rev-parse", "HEAD")
+        publish_validation(self.state, self._receipt("v2.md", f"SHA: {head}\n"), github)
+        body = Path(github.edit_body.call_args.args[1]).read_text()
+        self.assertIn(f"verificado en `{self.sha[:12]}`", body)
+        self.assertIn("los 1 commits posteriores", body)
+
 
 if __name__ == "__main__":
     unittest.main()

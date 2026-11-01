@@ -358,9 +358,13 @@ def _brief_path(state: dict[str, Any], brief: Path | None) -> str | None:
 def launch(state: dict[str, Any], workspace: str, implementation_session: str,
            urls: list[str], model: str | None = None, effort: str | None = None,
            rerun: list[str] | None = None, brief: Path | None = None,
-           replace: bool = False) -> dict[str, Any]:
+           replace: bool = False, user_approval: str | None = None) -> dict[str, Any]:
     if effort and not model:
         raise RunBlocked("--effort for QA requires --model; without both, QA inherits the calling chat")
+    # After manual revision, blocker fixes are covered by tests and CI; QA runs only on the user's say.
+    if state.get("currentPhase") in ("pr-creation", "review-convergence") and not (user_approval or "").strip():
+        raise RunBlocked("QA after manual revision runs only when the user allows a round: tell them "
+                         "which cases the change can affect and pass their words with --user-approved")
     if run_mode(state) != "conductor" or not state.get("observabilityVersion"):
         raise RunBlocked("Automatic QA chat creation is supported for new Conductor runs")
     if not state.get("runtimes") or not urls:
@@ -436,6 +440,8 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
         entry["rerunRequest"] = requested
     if replace:
         entry["replaces"] = previous.get("reviewSessionId")
+    if (user_approval or "").strip():
+        entry["userApproval"] = user_approval.strip()
     if plan:
         entry.update({"rerun": plan["rerun"], "carried": plan["carried"]})
     save_state(state)

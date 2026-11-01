@@ -121,7 +121,7 @@ def publish_validation(
         )
     _assert_pushed(worktree, sha)
     url = state["pr"]["url"]
-    merged = merge_validation_block(github.body(url), text)
+    merged = merge_validation_block(github.body(url), text + qa_coverage_note(state, sha))
     body_file = run_root(worktree, state["runId"]) / "validation" / "pr-body.md"
     body_file.parent.mkdir(parents=True, exist_ok=True)
     body_file.write_text(merged)
@@ -133,6 +133,20 @@ def publish_validation(
     }
     save_state(state)
     return state["validationBlock"]
+
+
+def qa_coverage_note(state: dict[str, Any], sha: str) -> str:
+    """Say which commit the QA Script verified, so later blocker commits are not read as QA'd."""
+    verified = (state.get("qa") or {}).get("verifiedCommit")
+    if not verified:
+        return ""
+    if verified == sha:
+        return "\n\n**QA del QA Script:** verificado en este commit.\n"
+    worktree = Path(state["worktree"])
+    count = run(["git", "rev-list", "--count", f"{verified}..{sha}"], cwd=worktree, check=False)
+    later = f"los {count.stdout.strip()} commits posteriores" if count.returncode == 0 else "los commits posteriores"
+    return (f"\n\n**QA del QA Script:** verificado en `{verified[:12]}`; {later} (blockers de review o "
+            "CI) no repitieron QA y quedan cubiertos por los tests y la paridad con CI.\n")
 
 
 def assert_validation_current(state: dict[str, Any]) -> None:

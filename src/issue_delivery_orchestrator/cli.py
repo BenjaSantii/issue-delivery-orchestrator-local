@@ -100,7 +100,7 @@ from .state import (
     select_review_method,
     now,
 )
-from .util import ensure_within, run
+from .util import ensure_within, read_json, run
 from . import implement_worker, observability_cli, runtime_recipe
 
 
@@ -1047,6 +1047,9 @@ def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, A
     return {"published": True, "qa": state["qa"]}
 
 
+AFTER_MANUAL_REVISION = ("pr-creation", "review-convergence")
+
+
 def publish_run(state: dict[str, Any], runtime_id: str | None) -> dict[str, Any]:
     worktree = Path(state["worktree"])
     folder = validation_dir(state)
@@ -1070,7 +1073,13 @@ def publish_run(state: dict[str, Any], runtime_id: str | None) -> dict[str, Any]
         result["linearIssue"] = receipt["linearIssue"]
     qa_results = folder / "qa-results.json"
     if qa_results.is_file() and approved_qa_cases(state) is not None:
-        result["qa"] = publish_qa_results(state, qa_results)["qa"]["cases"]
+        verified = (read_json(qa_results) or {}).get("verifiedCommit")
+        head = run(["git", "rev-parse", "HEAD"], cwd=worktree).stdout.strip()
+        if state.get("currentPhase") in AFTER_MANUAL_REVISION and verified != head:
+            # Manual revision already accepted this QA; blocker commits after it do not rerun QA.
+            result["qa"] = {"skipped": True, "verifiedCommit": verified}
+        else:
+            result["qa"] = publish_qa_results(state, qa_results)["qa"]["cases"]
     validation = folder / "pr-validation.md"
     if validation.is_file() and state.get("pr"):
         github = GitHubClient(worktree)

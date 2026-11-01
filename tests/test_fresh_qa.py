@@ -452,3 +452,14 @@ class FreshQATests(unittest.TestCase):
         self.state["qaSession"]["verifiedCommit"] = self.fixture.head
         with self.assertRaisesRegex(RunBlocked, "--rerun"):
             fresh_qa.rebase(self.state)
+
+    def test_qa_after_manual_revision_needs_the_users_round(self):
+        self.qa_round("review", {"QA-001", "QA-002", "QA-003"})
+        self.repair("blocker-fix")
+        self.state["currentPhase"] = "review-convergence"
+        with self.assertRaisesRegex(RunBlocked, "user allows a round"):
+            self.rerun("QA-002")
+        catalog = {"agents": [{"agent": "claude", "models": ["sonnet-5-5-1m"], "efforts": ["high"]}]}
+        entry, created = self.launch_with({"model": "sonnet-5-5-1m", "effort": "high"}, catalog,
+                                          rerun=["QA-002"], user_approval="sí, repite QA-002")
+        self.assertEqual((entry["userApproval"], entry["rerun"], len(created)), ("sí, repite QA-002", ["QA-002"], 1))
