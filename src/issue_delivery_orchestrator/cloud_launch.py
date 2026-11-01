@@ -634,7 +634,7 @@ def find_issue_workspace(cli: str, identifier: str) -> dict[str, Any]:
     return matches[0]
 
 
-_LIMIT = re.compile(r"hit your [\w ]*limit(?:[^\n]*?resets ([^\n]+))?", re.I)
+_LIMIT = re.compile(r"hit your [\w -]*limit(?:[^\n]*?resets ([^\n]+))?", re.I)
 SETUP_SESSION_NAME = "Conductor Cloud Workspace Setup"
 
 

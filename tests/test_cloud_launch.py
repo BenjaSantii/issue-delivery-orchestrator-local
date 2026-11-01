@@ -697,3 +697,5 @@ class RateLimitTests(unittest.TestCase):
         text = {"type": "text", "text": "You've hit your session limit · resets 11pm (UTC)"}
         self.assertEqual(self.reason([self.event(0.3, 0.8), text])["reason"], "usage-limit")
         self.assertEqual(self.reason([self.event(0.3, 0.5, status="rejected")])["reason"], "usage-limit")
+        hourly = {"type": "text", "text": "You've hit your 5-hour limit · resets 2:30am (UTC)"}
+        self.assertEqual(self.reason([hourly])["resets"], "2:30am (UTC)")
