@@ -24,7 +24,9 @@ preparado.
 
 Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la máquina local, usar
 `issue-delivery-cloud-launch`. Para iniciarlas en un host remoto de Superset, como una VPS, usar
-`issue-delivery-superset-launch`. Dentro del workspace cloud, leer
+`issue-delivery-superset-launch`. Para iniciarlas en T3 Code, con o sin Grill previo, usar
+`issue-delivery <issue> --base <base> t3-launch [--confirm]` en la máquina del servidor de T3.
+Dentro del workspace cloud, leer
 [conductor-cloud.md](references/conductor-cloud.md) antes de iniciar el run.
 
 ## Iniciar o reanudar

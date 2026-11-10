@@ -115,6 +115,11 @@ from .superset_launch import (
     superset_host,
     superset_project_id,
 )
+from .t3_launch import (
+    DEFAULT_PROVIDER as T3_DEFAULT_PROVIDER,
+    build_t3_launch,
+    create_t3_thread,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -208,6 +213,26 @@ def parser() -> argparse.ArgumentParser:
         "--confirm",
         action="store_true",
         help="Create the workspace and start the agent; without it the command only prints the plan",
+    )
+    t3_parser = actions.add_parser(
+        "t3-launch",
+        help="Start the issue in a T3 Code thread on this host: the Grill when spec or tickets are "
+        "missing, delivery when both are approved",
+    )
+    t3_parser.add_argument(
+        "--provider",
+        default=os.environ.get("ISSUE_DELIVERY_T3_PROVIDER", T3_DEFAULT_PROVIDER),
+        help="T3 provider instance for the thread, such as claudeAgent or claude-dev4",
+    )
+    t3_parser.add_argument(
+        "--model",
+        default=os.environ.get("ISSUE_DELIVERY_T3_MODEL", ""),
+        help="Model for the thread (default opus); aliases become T3 slugs",
+    )
+    t3_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Create the thread; without it the command only prints the plan",
     )
     recover = actions.add_parser(
         "cloud-recover",
@@ -408,6 +433,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return cloud_launch(args)
     if args.action == "superset-launch":
         return superset_launch(args)
+    if args.action == "t3-launch":
+        return t3_launch(args)
     if args.action == "cloud-resume":
         return cloud_resume(args)
     if args.action == "cloud-recover":
@@ -720,6 +747,44 @@ def superset_launch(args: argparse.Namespace) -> dict[str, Any]:
         )
     started = accept_folder_trust(cli, location, str(workspace.get("id")), terminal)
     return {**plan, "created": True, "workspace": workspace, "terminal": terminal, **started}
+
+
+def t3_launch(args: argparse.Namespace) -> dict[str, Any]:
+    configuration = settings()
+    repository = _repository(configuration.repository, None)
+    linear, credential_source = _verified_linear()
+    readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
+    if not args.stack_parent:
+        drop_merged_blockers(readiness, repository, configuration.pr_target_branch)
+    stack_parent = stack_parent_for(readiness, args.stack_parent)
+    launch = build_t3_launch(
+        readiness,
+        repository,
+        base=args.base,
+        stack_parent=stack_parent,
+        provider=args.provider,
+        model=args.model or None,
+        implement_model=args.implement_model,
+        qa_model=args.qa_model,
+        qa_effort=args.qa_effort,
+    )
+    plan = {
+        "credentialSource": credential_source,
+        "readiness": readiness,
+        "stackParent": stack_parent,
+        "startsAt": launch["startsAt"],
+        "provider": launch["provider"],
+        "model": launch["model"],
+        "title": launch["title"],
+        "workspaceBase": launch["workspaceBase"],
+        "message": launch["message"],
+        "created": False,
+    }
+    if not args.confirm:
+        return plan
+    created = create_t3_thread(launch)
+    return {**plan, "created": True, "threadId": created["threadId"],
+            "link": created.get("link") or (created.get("thread") or {}).get("link")}
 
 
 def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:

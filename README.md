@@ -368,6 +368,20 @@ plugin installed on that agent.
 
 ## T3 Code
 
+On the machine that runs the T3 Code server, one command starts an issue in its own thread:
+
+```bash
+python3 scripts/issue-delivery LOG-123 --base test t3-launch            # plan only
+python3 scripts/issue-delivery LOG-123 --base test t3-launch --confirm  # create the thread
+```
+
+It reads the issue in Linear and blocks when it is closed, has no branch, is blocked by an open
+issue that is not its stack parent, or its branch already exists. Otherwise it creates the thread
+in a new worktree from `origin/<base>` on the Linear branch. Without approved spec and tickets
+the thread starts at the Grill, publishes both when you approve them and then delivers; with
+them it goes straight to delivery. `--provider` (default `claudeAgent`) and `--model` (default
+`opus`) pick the agent, also through `ISSUE_DELIVERY_T3_PROVIDER` and `ISSUE_DELIVERY_T3_MODEL`.
+
 Inside a T3 Code thread (`T3CODE_THREAD_ID` is set) the orchestrator picks `t3` mode. Start the
 thread in a new worktree on the Linear branch, for example
 `t3 thread start . "<message>" --worktree origin/test --branch <linear-branch>`. The reviewer
