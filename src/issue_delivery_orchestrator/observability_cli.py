@@ -44,11 +44,16 @@ def configure(actions: Any) -> None:
     session.add_argument("--wait-idle-minutes", type=int, default=0,
                          help="Wait until the chat stops working, so its last turn is reported")
     actions.add_parser("publish-metrics")
-    qa = actions.add_parser("qa-session", help="Create a fresh QA chat in the same Conductor workspace")
-    qa.add_argument("--workspace", required=True)
-    qa.add_argument("--implementation-session", required=True)
+    qa = actions.add_parser("qa-session",
+                            help="Create a fresh QA chat in the same Conductor or Superset workspace")
+    qa.add_argument("--workspace",
+                    help="Conductor workspace ID; in Superset it defaults to SUPERSET_WORKSPACE_ID")
+    qa.add_argument("--implementation-session",
+                    help="Calling chat; in Superset it defaults to the only live terminal")
     qa.add_argument("--url", action="append", required=True)
-    qa.add_argument("--model", help="QA chat model; omitted, QA inherits the calling chat")
+    qa.add_argument("--agent", help="Superset agent for QA: preset, config UUID or label")
+    qa.add_argument("--model", help="QA chat model; omitted, Conductor inherits the calling chat "
+                    "and Superset uses the spec or sonnet")
     qa.add_argument("--effort", help="QA chat effort; requires --model, defaults to the agent's")
     qa.add_argument("--rerun", action="append", metavar="QA-ID|all",
                     help="After a repair, rerun only these cases and carry the previous PASS ones")
@@ -119,6 +124,10 @@ def wait_for_qa(state: dict[str, Any], timeout_minutes: int) -> dict[str, Any]:
     review = (state.get("qaSession") or {}).get("reviewSessionId")
     if not review:
         raise RunBlocked("No QA conversation is registered; run qa-session first")
+    if run_mode(state) == "superset":
+        host = fresh_qa.qa_host("superset", (state.get("qaSession") or {}).get("workspaceId"))
+        status = host.wait(review, timeout_minutes * 60, IDLE_POLL_SECONDS)
+        return {"reviewSessionId": review, "status": status, **fresh_qa.outcome(state, host)}
     cli = conductor_cli()
     # One blocking call replaces the implementer's polling turns; it costs no model tokens while waiting.
     deadline = time.monotonic() + timeout_minutes * 60
@@ -170,15 +179,15 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
     if args.action == "qa-session":
         return fresh_qa.launch(state, args.workspace, args.implementation_session,
                                args.url, args.model, args.effort, args.rerun, args.brief,
-                               args.replace, args.user_approved)
+                               args.replace, args.user_approved, args.agent)
     if args.action == "qa-resume":
         return fresh_qa.resume(state, args.note)
     if args.action == "qa-rebase":
         return fresh_qa.rebase(state, old_base=args.old_base, rerun=args.rerun)
     if args.action == "qa-wait":
         return wait_for_qa(state, args.timeout_minutes)
-    if run_mode(state) == "conductor":
-        raise RunBlocked("Use qa-session to create and verify the actual Conductor QA chat")
+    if run_mode(state) in ("conductor", "superset"):
+        raise RunBlocked("Use qa-session to create and verify the actual QA chat")
     receipt = _artifact(state, args.receipt)
     if not isinstance(receipt, dict) or receipt.get("freshContext") is not True or (
         receipt.get("host") != run_mode(state)

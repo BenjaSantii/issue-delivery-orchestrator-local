@@ -94,7 +94,42 @@ superficie y los ejecuta con subagentes nuevos, uno a la vez, porque comparten r
 sembrados. Él junta los resultados y escribe `qa-results.json` después de cada grupo. Así su
 contexto no acumula las capturas y salidas de todos los casos.
 
-En Codex/Superset/Vanilla, usar el mecanismo del host para abrir un chat o reviewer con contexto
+## En Superset
+
+Desde la terminal del Generador, dentro del workspace de Superset:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
+  --url http://localhost:<puerto> [--url ...] [--brief <ruta-en-el-run>] \
+  [--agent <preset|UUID|etiqueta>] [--model <modelo> [--effort <esfuerzo>]]
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-wait   # en segundo plano
+```
+
+- **Workspace y Generador.** El workspace sale de `SUPERSET_WORKSPACE_ID`. La terminal que
+  implementa se toma del QA anterior o, la primera vez, es la única terminal viva; si hay más,
+  `qa-session` bloquea y pide `--implementation-session <terminal>` (`superset terminals list
+  --local --workspace $SUPERSET_WORKSPACE_ID`).
+- **Agente y modelo.** En orden: flags de `qa-session`, `--qa-agent`/`--qa-model`/`--qa-effort`
+  con los que se creó el run (los pone `superset-launch`), `QA Model`/`QA Effort` del spec y,
+  por defecto, el preset `claude` con `sonnet` y esfuerzo `high` (`medium` si el spec dice
+  `Lane: small`). El agente acepta el preset, el UUID de la configuración o su etiqueta, como
+  `Claude dev4`. El modelo debe ser `haiku`, `sonnet`, `opus`, `fable` o un ID `claude-*`, con
+  `[1m]` opcional; un ID de Conductor como `sonnet-5-5-1m` se traduce a `sonnet[1m]`. Superset
+  no valida el modelo, así que `qa-session` lo hace antes de crear la sesión.
+- **ID del QA.** El agente de QA no ve el ID de su terminal. `qa-session` lo escribe en
+  `validation/qa-session.json` al crearla y el prompt le indica copiarlo a `reviewSessionId`.
+- **Aviso de confianza.** Si el agente de QA usa otro perfil que el Generador, Claude Code pide
+  confiar en la carpeta. `qa-session` lo acepta solo y espera a que el agente arranque.
+- **Esperar y retomar.** `qa-wait` usa `superset agents wait --until settled` y detecta el límite
+  de uso en la transcripción. `qa-resume` escribe el mensaje de reanudación en la terminal del
+  QA. Si esa terminal ya no existe, usar `qa-session --replace`.
+
+Nunca crear el QA a mano con `superset agents create`: se pierden el registro, el ID del QA y la
+herencia de casos.
+
+## Otros hosts
+
+En Codex/Vanilla, usar el mecanismo del host para abrir un chat o reviewer con contexto
 nuevo, en el mismo worktree/runtime, y registrar su recibo con `qa-register --receipt <ruta>`:
 
 ```json

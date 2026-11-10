@@ -357,10 +357,14 @@ python3 scripts/issue-delivery LOG-123 --base test superset-launch --host <machi
 The first command runs the same readiness checks as `cloud-launch`, plus host online and no
 active workspace on the issue branch, and prints the plan. `--confirm` creates the workspace on
 the Linear branch and starts the agent with a first message that runs the orchestrator with
-`--mode superset` and skips the Grill. `ISSUE_DELIVERY_SUPERSET_HOST`, `ISSUE_DELIVERY_SUPERSET_AGENT`
-(preset or host agent config UUID) and `ISSUE_DELIVERY_SUPERSET_MODEL` (default `opus`) can replace
-the flags. The host needs the plugin installed and its worktree folder trusted in each Claude
-profile, or the agent stops at the folder trust prompt before reading the message.
+`--mode superset` and skips the Grill, then accepts Claude Code's folder trust prompt so the
+agent reads that message. `--agent` and `--qa-agent` take a preset, a host agent config UUID or
+its label; `--model`/`--effort` and `--qa-model`/`--qa-effort` take Claude Code models (`haiku`,
+`sonnet`, `opus`, `fable`, `claude-*`). The run's QA opens in another terminal of the same
+workspace through `qa-session`, defaulting to the delivery agent with `sonnet` and `high` effort.
+`ISSUE_DELIVERY_SUPERSET_HOST`, `ISSUE_DELIVERY_SUPERSET_AGENT`, `ISSUE_DELIVERY_SUPERSET_MODEL`
+(default `opus`) and `ISSUE_DELIVERY_SUPERSET_EFFORT` can replace the flags. The host needs the
+plugin installed on that agent.
 
 ## Conductor Cloud
 

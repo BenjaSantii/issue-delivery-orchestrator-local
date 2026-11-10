@@ -108,7 +108,10 @@ from .superset_launch import (
     DEFAULT_AGENT as SUPERSET_DEFAULT_AGENT,
     build_superset_launch,
     create_superset_workspace,
+    accept_folder_trust,
     existing_issue_workspace,
+    launched_terminal,
+    superset_agent_id,
     superset_cli,
     superset_host,
     superset_project_id,
@@ -141,6 +144,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--implement-model", help="Model for the fresh worker of each ticket")
     result.add_argument("--qa-model", help="Conductor model for this run's fresh QA chat")
     result.add_argument("--qa-effort", help="Effort for --qa-model; defaults to the agent's")
+    result.add_argument("--qa-agent", help="Superset agent for this run's QA chat (preset, UUID or label)")
     result.add_argument(
         "--reviewer",
         choices=REVIEW_METHODS,
@@ -194,6 +198,11 @@ def parser() -> argparse.ArgumentParser:
         "--model",
         default=os.environ.get("ISSUE_DELIVERY_SUPERSET_MODEL", ""),
         help="Model for the delivery agent (default opus)",
+    )
+    superset_parser.add_argument(
+        "--effort",
+        default=os.environ.get("ISSUE_DELIVERY_SUPERSET_EFFORT", ""),
+        help="Reasoning effort for the delivery agent",
     )
     superset_parser.add_argument("--superset-project", help="Superset project ID")
     superset_parser.add_argument(
@@ -665,6 +674,9 @@ def superset_launch(args: argparse.Namespace) -> dict[str, Any]:
             f"({existing.get('id')}) on {host.get('name')}; continue there instead of launching again"
         )
     project_id = args.superset_project or superset_project_id(cli, repository)
+    location = ["--host", str(host["id"])]
+    agent = superset_agent_id(cli, location, args.agent)
+    qa_agent = superset_agent_id(cli, location, args.qa_agent) if args.qa_agent else agent
     launch = build_superset_launch(
         readiness,
         configuration,
@@ -673,9 +685,13 @@ def superset_launch(args: argparse.Namespace) -> dict[str, Any]:
         project_id=project_id,
         base=args.base,
         stack_parent=stack_parent,
-        agent=args.agent,
+        agent=agent,
         model=args.model or None,
+        effort=args.effort or None,
         implement_model=args.implement_model,
+        qa_agent=qa_agent,
+        qa_model=args.qa_model,
+        qa_effort=args.qa_effort,
     )
     plan = {
         "credentialSource": credential_source,
@@ -685,6 +701,8 @@ def superset_launch(args: argparse.Namespace) -> dict[str, Any]:
         "projectId": project_id,
         "agent": launch["agent"],
         "model": launch["model"],
+        "effort": launch["effort"],
+        "qa": launch["qa"],
         "implementModel": launch["implementModel"],
         "message": launch["message"],
         "workspaceBase": launch["workspaceBase"],
@@ -693,8 +711,16 @@ def superset_launch(args: argparse.Namespace) -> dict[str, Any]:
     }
     if not args.confirm:
         return plan
-    workspace = create_superset_workspace(cli, launch)
-    return {**plan, "created": True, "workspace": workspace}
+    created = create_superset_workspace(cli, launch)
+    workspace = created.get("workspace") if isinstance(created.get("workspace"), dict) else created
+    terminal = launched_terminal(created)
+    if not terminal:
+        raise RunBlocked(
+            f"Workspace {workspace.get('id')} was created but Superset returned no agent terminal; "
+            "open it and start the agent with the plan's message"
+        )
+    started = accept_folder_trust(cli, location, str(workspace.get("id")), terminal)
+    return {**plan, "created": True, "workspace": workspace, "terminal": terminal, **started}
 
 
 def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
@@ -904,8 +930,9 @@ def bootstrap(
     if args.implement_model:
         state["implementModel"] = args.implement_model
         save_state(state)
-    if args.qa_model:
-        state["qaConfiguration"] = {"model": args.qa_model, "effort": args.qa_effort or ""}
+    if args.qa_model or args.qa_agent:
+        state["qaConfiguration"] = {"model": args.qa_model or "", "effort": args.qa_effort or "",
+                                    "agent": args.qa_agent or ""}
         save_state(state)
     try:
         linear_state = linear.start_issue(issue.id)

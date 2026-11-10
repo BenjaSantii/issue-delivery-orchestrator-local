@@ -305,7 +305,9 @@ Si un `restack` ocurre después de un QA terminado, fijar el QA al nuevo HEAD co
 Si `observabilityVersion: 1`, leer [fresh-qa.md](references/fresh-qa.md) y abrir/registrar una
 conversación nueva de QA, con el mismo runtime y los artefactos aprobados fijados al SHA.
 En Conductor usa el `--model`/`--effort` pedidos para el QA o, si no se indican, hereda los del
-chat que llama, sin fijar Codex. Esperar al QA con `qa-wait` en segundo plano, sin polling.
+chat que llama, sin fijar Codex. En Superset abre otra terminal del mismo workspace con el agente
+y modelo del run (`--qa-agent`/`--qa-model`), luego el `QA Model` del spec y por defecto `sonnet`
+con esfuerzo `high`; ver "En Superset" en fresh-qa.md. Esperar al QA con `qa-wait` en segundo plano, sin polling.
 Si el QA se detiene, retomarlo con `qa-resume` (o `qa-session --replace` si no puede seguir);
 nunca crear sesiones de QA a mano. Ver "Si el QA se detiene" en fresh-qa.md.
 Los pasos de verificación siguientes los ejecuta ese reviewer, no el implementador. El

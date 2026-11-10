@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .cloud_launch import _json_output, conductor_cli, workspace_sessions
+from .cloud_launch import _json_output, conductor_cli, stop_reason, workspace_sessions
 from .errors import RunBlocked
 from .stack import integration_ref
 from .state import now, run_mode, run_root, save_state
@@ -184,6 +184,74 @@ def _status(cli: str, session_id: str) -> str | None:
     return _json_output(run([cli, "session", "status", session_id, "--json"]).stdout).get("status")
 
 
+class ConductorQaHost:
+    name = "conductor"
+
+    def __init__(self, workspace: str | None):
+        self.workspace = workspace or ""
+        self.cli = conductor_cli()
+        self._sessions: list[dict[str, Any]] | None = None
+
+    @property
+    def sessions(self) -> list[dict[str, Any]]:
+        if self._sessions is None:
+            if not self.workspace:
+                raise RunBlocked("Pass --workspace with the Conductor workspace ID")
+            self._sessions = workspace_sessions(self.cli, self.workspace)
+        return self._sessions
+
+    def caller(self, implementation_session: str | None, exclude: tuple[str, ...] = ()) -> str:
+        if not any(s.get("id") == implementation_session for s in self.sessions):
+            raise RunBlocked("Implementation session is not in this Conductor workspace")
+        return str(implementation_session)
+
+    def configuration(self, agent, model, effort, caller, spec, lane):
+        if not model:
+            model, effort = spec
+        if model:
+            return resolve_configuration(self.cli, model, effort, "Requested QA model"), "explicit"
+        session = next(s for s in self.sessions if s.get("id") == caller)
+        return caller_configuration(self.cli, session), "inherited"
+
+    def status(self, session_id: str) -> str | None:
+        return _status(self.cli, session_id)
+
+    def create(self, state: dict[str, Any], name: str, prompt: str, configuration: dict[str, str]) -> str:
+        candidates = [s for s in self.sessions if s.get("name") == name]
+        if not candidates:
+            run([self.cli, "session", "create", "--workspace", self.workspace, "--agent",
+                 configuration["agent"], "--model", configuration["model"], "--effort",
+                 configuration["effort"], "--name", name, "--message-file", "-", "--json"],
+                input_text=prompt)
+            candidates = [s for s in workspace_sessions(self.cli, self.workspace) if s.get("name") == name]
+        if len(candidates) != 1:
+            raise RunBlocked("Cannot identify the fresh QA conversation; inspect before retrying")
+        selected = candidates[0]
+        if any(selected.get(key) != configuration[key] for key in ("model", "effort")):
+            raise RunBlocked("QA session model/effort does not match the requested configuration")
+        return str(selected["id"])
+
+    def receipt(self) -> str:
+        return f"conductor-workspace:{self.workspace}"
+
+    def send(self, session_id: str, message: str) -> None:
+        run([self.cli, "message", "create", "--session", session_id, "--message-file", "-"],
+            input_text=message)
+
+    def stop_reason(self, session_id: str) -> dict[str, Any] | None:
+        return stop_reason(self.cli, session_id)
+
+
+def qa_host(mode: str, workspace: str | None):
+    if mode == "conductor":
+        return ConductorQaHost(workspace)
+    if mode == "superset":
+        from .qa_hosts import SupersetQaHost
+
+        return SupersetQaHost(workspace)
+    raise RunBlocked("Automatic QA chat creation is supported for new Conductor and Superset runs")
+
+
 def resume_message(pinned: dict[str, str], note: str | None) -> str:
     return (
         "Tu sesión de QA se detuvo (límite de uso, reinicio de la VM u otro corte). Retoma el QA "
@@ -206,8 +274,8 @@ def resume(state: dict[str, Any], note: Path | None = None) -> dict[str, Any]:
     if any(entry.get(key) != value for key, value in pinned.items()):
         raise RunBlocked("Code or approved artifacts changed since this QA; create a new one with "
                          "qa-session --rerun")
-    cli = conductor_cli()
-    if _status(cli, review) == "working":
+    host = qa_host(run_mode(state), entry.get("workspaceId"))
+    if host.status(review) == "working":
         raise RunBlocked("The QA conversation is still working; wait for it with qa-wait")
     text = None
     if note is not None:
@@ -217,16 +285,29 @@ def resume(state: dict[str, Any], note: Path | None = None) -> dict[str, Any]:
         if not path.is_file():
             raise RunBlocked("The resume note is missing from the run")
         text = path.read_text()
-    run([cli, "message", "create", "--session", review, "--message-file", "-"],
-        input_text=resume_message(pinned, text))
+    host.send(review, resume_message(pinned, text))
     entry.setdefault("resumedAt", []).append(now())
     save_state(state)
     return {"reviewSessionId": review, "resumed": True, "resumes": len(entry["resumedAt"])}
 
 
 def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
-              plan: dict[str, Any] | None = None, brief: str | None = None) -> str:
+              plan: dict[str, Any] | None = None, brief: str | None = None,
+              host: str = "conductor") -> str:
     root = run_root(Path(state["worktree"]), state["runId"])
+    if host == "superset":
+        identity = (f"reviewSessionId igual al valor de {root}/validation/qa-session.json, que el "
+                    "controlador escribe al crear esta conversación (si aún no existe, espera unos "
+                    "segundos y vuelve a leerlo)")
+        surface = ("En este host sin pantalla la revisión móvil SIEMPRE es simulación web; no pidas "
+                   "teléfono, ADB ni emulador nativo. ")
+    else:
+        identity = "reviewSessionId igual al ID real de ESTA nueva conversación"
+        surface = ("En Conductor la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB "
+                   "ni emulador nativo. ")
+    ports = ("Lee conductor-validation.md: abre las vistas web en http://localhost:3001 a :3004, "
+             "con el servidor realmente en ese puerto; las APIs conservan sus puertos internos. "
+             if host == "conductor" else "")
     # Without these facts the reviewer reads product code to find them, a large share of QA tokens.
     operations = (
         f"Brief operativo con rutas, cuentas, datos sembrados y cómo llegar a cada estado: {brief}. "
@@ -274,12 +355,9 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
         "validation/, que lees sólo si una assertion falla.\n"
         f"{groups}{scope}UI con la skill de revisión del modo y "
         "mobile-web-reviewer para teléfono; API/concurrencia con scripts contra el runtime. "
-        "En Conductor la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB "
-        "ni emulador nativo. Registra límites del SO como notas no bloqueantes, sin decir "
+        f"{surface}Registra límites del SO como notas no bloqueantes, sin decir "
         "que validaste nativo. Reutiliza el flag local E2E existente para vendedor si aplica. "
-        "Lee conductor-validation.md: abre las vistas web en http://localhost:3001 a :3004, "
-        "con el servidor realmente en ese puerto; las APIs conservan sus puertos internos. "
-        "Valida GPS, Alert.alert y demás contratos nativos con Jest o scripts contra código "
+        f"{ports}Valida GPS, Alert.alert y demás contratos nativos con Jest o scripts contra código "
         "real, sustituyendo sólo adaptadores del SO. Adjunta comandos, SHA y assertions. "
         "Esos casos pueden ser PASS sin dispositivo ni WAIVED si las pruebas y la web "
         "aplicable pasan; no declares observado el SO. Fallos reales siguen siendo FAIL. "
@@ -289,8 +367,7 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
         "ausencia de duplicados y no-cambios ante rechazos cuando el caso lo requiera. No "
         "fabriques resultados mediante writes directos a DB ni uses producción. Una respuesta "
         "200 o un toast no demuestran persistencia.\n"
-        f"Escribe {root}/validation/qa-results.json con reviewSessionId igual al ID real "
-        "de ESTA nueva conversación y un campo persistence por caso según fresh-qa.md. "
+        f"Escribe {root}/validation/qa-results.json con {identity} y un campo persistence por caso según fresh-qa.md. "
         "Actualízalo después de cada caso terminado, con los casos hechos hasta ahora, y al "
         "final con todos: si tu sesión se corta, lo ya resuelto no se repite. "
         "Guarda las capturas en validation/ui/<ID>-<NN>-<slug>.png y las salidas en "
@@ -344,6 +421,13 @@ def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
     return resolve_configuration(cli, session.get("model"), session.get("effort"), "Calling chat")
 
 
+def _lane(state: dict[str, Any]) -> str:
+    relative = (state.get("artifacts") or {}).get("spec")
+    path = Path(state["worktree"]) / relative if relative else None
+    match = re.search(r"(?m)^Lane:[ \t]*(\S+)", path.read_text()) if path and path.is_file() else None
+    return match.group(1).lower() if match else "standard"
+
+
 def _brief_path(state: dict[str, Any], brief: Path | None) -> str | None:
     if brief is None:
         return None
@@ -355,38 +439,34 @@ def _brief_path(state: dict[str, Any], brief: Path | None) -> str | None:
     return str(path)
 
 
-def launch(state: dict[str, Any], workspace: str, implementation_session: str,
+def launch(state: dict[str, Any], workspace: str | None, implementation_session: str | None,
            urls: list[str], model: str | None = None, effort: str | None = None,
            rerun: list[str] | None = None, brief: Path | None = None,
-           replace: bool = False, user_approval: str | None = None) -> dict[str, Any]:
+           replace: bool = False, user_approval: str | None = None,
+           agent: str | None = None) -> dict[str, Any]:
     if effort and not model:
         raise RunBlocked("--effort for QA requires --model; without both, QA inherits the calling chat")
     # After manual revision, blocker fixes are covered by tests and CI; QA runs only on the user's say.
     if state.get("currentPhase") in ("pr-creation", "review-convergence") and not (user_approval or "").strip():
         raise RunBlocked("QA after manual revision runs only when the user allows a round: tell them "
                          "which cases the change can affect and pass their words with --user-approved")
-    if run_mode(state) != "conductor" or not state.get("observabilityVersion"):
-        raise RunBlocked("Automatic QA chat creation is supported for new Conductor runs")
+    if not state.get("observabilityVersion"):
+        raise RunBlocked("Automatic QA chat creation is supported only for new runs")
     if not state.get("runtimes") or not urls:
         raise RunBlocked("Register the local runtime and its URLs before starting QA")
     pinned = snapshot(state)
-    cli = conductor_cli()
-    sessions = workspace_sessions(cli, workspace)
-    caller = next((s for s in sessions if s.get("id") == implementation_session), None)
-    if caller is None:
-        raise RunBlocked("Implementation session is not in this Conductor workspace")
-    # An explicit QA model decouples the reviewer's cost from the implementer's; without it QA inherits.
-    if not model and (state.get("qaConfiguration") or {}).get("model"):
-        model, effort = state["qaConfiguration"]["model"], state["qaConfiguration"].get("effort")
-    if not model:
-        model, effort = spec_qa_configuration(state)
-    if model:
-        configuration = resolve_configuration(cli, model, effort, "Requested QA model")
-        source = "explicit"
-    else:
-        configuration = caller_configuration(cli, caller)
-        source = "inherited"
     previous = state.get("qaSession") or {}
+    host = qa_host(run_mode(state), workspace or previous.get("workspaceId"))
+    exclude = (previous["reviewSessionId"],) if previous.get("reviewSessionId") else ()
+    # Earlier QA terminals stay live, so the implementer registered last time is the safe default.
+    caller = host.caller(implementation_session or previous.get("implementationSessionId"), exclude)
+    stored = state.get("qaConfiguration") or {}
+    # An explicit QA model decouples the reviewer's cost from the implementer's.
+    if not model and stored.get("model"):
+        model, effort = stored["model"], stored.get("effort")
+    agent = agent or stored.get("agent")
+    spec = spec_qa_configuration(state)
+    configuration, source = host.configuration(agent, model, effort, caller, spec, _lane(state))
     requested = sorted(set(rerun or []))
     if "all" in requested:
         if len(requested) > 1:
@@ -397,12 +477,12 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
         raise RunBlocked("--replace only replaces a stopped QA of this same commit; use --rerun")
     if replace and requested:
         raise RunBlocked("--replace already reruns only what the stopped QA left pending")
-    if replace and _status(cli, previous["reviewSessionId"]) == "working":
+    if replace and host.status(previous["reviewSessionId"]) == "working":
         raise RunBlocked("The QA conversation is still working; wait for it with qa-wait")
     if same_candidate and not replace:
         if requested and previous.get("rerunRequest") != requested:
             raise RunBlocked("A QA conversation already exists for this commit with another --rerun set")
-        if previous.get("implementationSessionId") != implementation_session:
+        if previous.get("implementationSessionId") != caller:
             raise RunBlocked("A different implementation session owns this QA attempt")
         if any(previous.get(key) != value for key, value in configuration.items()):
             raise RunBlocked(
@@ -419,22 +499,10 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
                                           "replaces": previous.get("reviewSessionId") if replace else None},
                                          sort_keys=True).encode()).hexdigest()[:8]
     name = f"QA {state['runId']} {pinned['verifiedCommit'][:12]} {contract}"
-    # Recover a created session after an interrupted response without duplicating the agent.
-    candidates = [s for s in sessions if s.get("name") == name]
-    if not candidates:
-        prompt = qa_prompt(state, pinned, urls, plan, _brief_path(state, brief))
-        run([cli, "session", "create", "--workspace", workspace, "--agent", configuration["agent"],
-             "--model", configuration["model"], "--effort", configuration["effort"], "--name", name,
-             "--message-file", "-", "--json"], input_text=prompt)
-        candidates = [s for s in workspace_sessions(cli, workspace) if s.get("name") == name]
-    if len(candidates) != 1:
-        raise RunBlocked("Cannot identify the fresh QA conversation; inspect before retrying")
-    selected = candidates[0]
-    if any(selected.get(key) != configuration[key] for key in ("model", "effort")):
-        raise RunBlocked(f"QA session model/effort does not match the {source} configuration")
-    entry = register(state, implementation_session, selected["id"],
-                     host_receipt=f"conductor-workspace:{workspace}", pinned=pinned)
-    entry.update({**configuration, "configurationSource": source, "workspaceId": workspace,
+    prompt = qa_prompt(state, pinned, urls, plan, _brief_path(state, brief), host=host.name)
+    review = host.create(state, name, prompt, configuration)
+    entry = register(state, caller, review, host_receipt=host.receipt(), pinned=pinned)
+    entry.update({**configuration, "configurationSource": source, "workspaceId": host.workspace,
                   "baseCommit": _base(state, "HEAD")})
     if requested:
         entry["rerunRequest"] = requested
@@ -448,9 +516,9 @@ def launch(state: dict[str, Any], workspace: str, implementation_session: str,
     return entry
 
 
-def outcome(state: dict[str, Any], cli: str) -> dict[str, Any]:
+def outcome(state: dict[str, Any], host: Any) -> dict[str, Any]:
+    # Conductor callers pass the CLI path; Superset passes its QA host.
     """Whether an idle reviewer finished every pending case or stopped before writing them all."""
-    from .cloud_launch import stop_reason
     from .qa_script import approved_qa_cases
 
     entry = state.get("qaSession") or {}
@@ -464,7 +532,8 @@ def outcome(state: dict[str, Any], cli: str) -> dict[str, Any]:
     missing = sorted(expected - written - set(entry.get("carried") or {}))
     if not missing:
         return {"state": "complete", "results": summary}
-    reason = stop_reason(cli, entry["reviewSessionId"]) or {"reason": "unknown"}
+    reason = (host.stop_reason(entry["reviewSessionId"]) if hasattr(host, "stop_reason")
+              else stop_reason(host, entry["reviewSessionId"])) or {"reason": "unknown"}
     return {"state": "stopped", "missing": missing, **reason, "results": summary}
 
 

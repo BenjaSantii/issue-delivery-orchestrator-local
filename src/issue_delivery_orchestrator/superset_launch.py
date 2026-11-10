@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +23,15 @@ from .util import run
 SUPERSET_CLI_PATHS = (
     Path.home() / ".paradev" / "bin" / "superset",
     Path.home() / ".superset" / "bin" / "superset",
+    Path.home() / "superset" / "bin" / "superset",
 )
 DEFAULT_AGENT = "claude"
 DEFAULT_MODEL = "opus"
 ONLINE_STATES = {"yes", "local"}
+CLAUDE_MODEL = re.compile(r"^(haiku|sonnet|opus|fable)(\[1m\])?$|^claude-[a-z0-9.-]+(\[1m\])?$")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+TRUST_PROMPT = "Yes, I trust this folder"
+STARTED_STATES = {"working", "idle", "blocked"}
 
 
 def superset_cli() -> str:
@@ -100,14 +107,23 @@ def build_superset_launch(
     stack_parent: str | None,
     agent: str,
     model: str | None,
+    effort: str | None = None,
     implement_model: str | None = None,
+    qa_agent: str | None = None,
+    qa_model: str | None = None,
+    qa_effort: str | None = None,
 ) -> dict[str, Any]:
+    if qa_effort and not qa_model:
+        raise RunBlocked("--qa-effort requires --qa-model")
     workspace_base = stack_parent or base
     if not _remote_branch_exists(repository, workspace_base):
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
     model = model or DEFAULT_MODEL
+    validate_model(model, effort, "Delivery")
+    validate_model(qa_model, qa_effort, "QA")
+    qa = {"agent": qa_agent or agent, "model": qa_model or "", "effort": qa_effort or ""}
     message = superset_launch_message(
-        readiness, base=base, stack_parent=stack_parent, implement_model=implement_model
+        readiness, base=base, stack_parent=stack_parent, implement_model=implement_model, qa=qa
     )
     name = f"[{readiness['identifier']}] {readiness['title']}"
     # The Linear branch already carries the user's prefix, so Superset must not add its own.
@@ -129,6 +145,7 @@ def build_superset_launch(
         agent,
         "--model",
         model,
+        *(["--effort", effort] if effort else []),
         "--prompt",
         message,
         "--json",
@@ -138,6 +155,8 @@ def build_superset_launch(
         "message": message,
         "agent": agent,
         "model": model,
+        "effort": effort or "",
+        "qa": qa,
         "implementModel": implement_model,
         "workspaceBase": workspace_base,
         "behindTarget": _commits_behind(
@@ -152,6 +171,7 @@ def superset_launch_message(
     base: str,
     stack_parent: str | None,
     implement_model: str | None = None,
+    qa: dict[str, str] | None = None,
 ) -> str:
     identifier = readiness["identifier"]
     flags = "--mode superset " + (
@@ -159,6 +179,10 @@ def superset_launch_message(
     )
     if implement_model:
         flags += f" --implement-model {implement_model}"
+    if qa and qa.get("agent"):
+        flags += f" --qa-agent {qa['agent']}"
+    if qa and qa.get("model"):
+        flags += f" --qa-model {qa['model']}" + (f" --qa-effort {qa['effort']}" if qa.get("effort") else "")
     tickets = ", ".join(readiness["ticketIds"])
     return (
         f"Entrega {identifier} ({readiness['title']}) con Issue Delivery Orchestrator en este "
@@ -175,14 +199,86 @@ def superset_launch_message(
         "Grill. Si la reconciliación cambia el alcance, pide aprobación antes de seguir.\n"
         "4. Usa el reviewer que decida el motor: en un host sin pantalla es "
         "`issue-delivery-playwright-review`, con `mobile-web-reviewer` para las historias de "
-        "teléfono.\n"
+        "teléfono. El QA corre en otro chat de este workspace: créalo con `qa-session` (toma "
+        "agente y modelo del run), espéralo con `qa-wait` en segundo plano y, si se detiene, "
+        "retómalo con `qa-resume` o `qa-session --replace`. No crees sesiones de QA a mano.\n"
         "5. Pausa sólo ante tickets HITL, decisiones de tamaño, permisos de LocalReviewer o "
         "bloqueos reales; explica la acción mínima que necesitas.\n"
     )
 
 
 def create_superset_workspace(cli: str, launch: dict[str, Any]) -> dict[str, Any]:
-    result = run([cli, *launch["arguments"]])
-    created = _json_output(result.stdout)
-    workspace = created.get("workspace")
-    return workspace if isinstance(workspace, dict) else created
+    return _json_output(run([cli, *launch["arguments"]]).stdout)
+
+
+def validate_model(model: str | None, effort: str | None, subject: str) -> None:
+    """Superset passes these through to the agent CLI unchecked, so a typo would only fail at launch."""
+    if model and not CLAUDE_MODEL.match(model):
+        raise RunBlocked(
+            f"{subject} model {model} is not a Claude Code model: use haiku, sonnet, opus, fable "
+            "or a claude-* ID"
+        )
+    if effort and effort not in EFFORTS:
+        raise RunBlocked(f"{subject} effort {effort} is not one of {', '.join(EFFORTS)}")
+
+
+def superset_agent_id(cli: str, location: list[str], wanted: str) -> str:
+    """Accept a preset (claude), a host agent config UUID or its label (Claude dev4)."""
+    agents = _listing(cli, "agents", "list", *location)
+    for agent in agents:
+        if wanted == str(agent.get("id") or ""):
+            return wanted
+    labelled = [agent for agent in agents if wanted == str(agent.get("label") or "")]
+    if len(labelled) == 1:
+        return str(labelled[0]["id"])
+    if any(wanted == str(agent.get("presetId") or "") for agent in agents):
+        return wanted
+    known = ", ".join(str(agent.get("label")) for agent in agents)
+    raise RunBlocked(f"No agent {wanted} on this Superset host. Known agents: {known}")
+
+
+def agent_state(cli: str, location: list[str], workspace: str, terminal: str) -> str | None:
+    explained = _json_output(run([cli, "agents", "explain", *location, "--workspace", workspace,
+                                  "--terminal", terminal, "--json"], check=False).stdout)
+    return explained.get("state")
+
+
+def agent_transcript(cli: str, location: list[str], workspace: str, terminal: str) -> str:
+    read = _json_output(run([cli, "agents", "read", *location, "--workspace", workspace,
+                             "--terminal", terminal, "--json"], check=False).stdout)
+    return str(read.get("text") or "")
+
+
+def accept_folder_trust(
+    cli: str, location: list[str], workspace: str, terminal: str, *, timeout_seconds: float = 180,
+    poll_seconds: float = 3,
+) -> dict[str, Any]:
+    """Claude Code asks to trust each new folder and ignores its first prompt until someone answers."""
+    accepted = False
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        state = agent_state(cli, location, workspace, terminal)
+        if state in STARTED_STATES:
+            return {"state": state, "trustAccepted": accepted}
+        screen = _json_output(run([cli, "terminals", "read", *location, "--workspace", workspace,
+                                   "--terminal", terminal, "--json"], check=False).stdout)
+        if TRUST_PROMPT in str(screen.get("text") or ""):
+            run([cli, "terminals", "send", *location, "--workspace", workspace,
+                 "--terminal", terminal, "--keys", "down,enter"])
+            accepted = True
+        time.sleep(poll_seconds)
+    raise RunBlocked(
+        f"The agent in terminal {terminal} did not start within {timeout_seconds:g} seconds; "
+        "open the workspace and check its terminal"
+    )
+
+
+def launched_terminal(created: dict[str, Any]) -> str | None:
+    for key in ("agents", "terminals"):
+        for item in created.get(key) or []:
+            if isinstance(item, dict):
+                value = item.get("sessionId") or item.get("terminalId") or item.get("id")
+                if value:
+                    return str(value)
+    value = created.get("sessionId") or created.get("terminalId")
+    return str(value) if value else None

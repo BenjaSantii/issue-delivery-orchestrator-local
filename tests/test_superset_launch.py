@@ -8,6 +8,7 @@ from issue_delivery_orchestrator.superset_launch import (
     build_superset_launch,
     create_superset_workspace,
     existing_issue_workspace,
+    launched_terminal,
     superset_host,
     superset_launch_message,
 )
@@ -59,6 +60,24 @@ class SupersetLaunchTests(unittest.TestCase):
         self.assertIn("TICKET-001, TICKET-002", message)
         self.assertIn("sin repetir el Grill", message)
 
+    def test_qa_agent_and_model_travel_to_the_run(self):
+        launch = self.superset_launch(effort="high", qa_agent="agent-config-2", qa_model="sonnet",
+                                      qa_effort="medium")
+
+        arguments = launch["arguments"]
+        self.assertEqual(arguments[arguments.index("--effort") + 1], "high")
+        self.assertIn("--qa-agent agent-config-2 --qa-model sonnet --qa-effort medium",
+                      launch["message"])
+        self.assertIn("qa-session", launch["message"])
+
+    def test_qa_defaults_to_the_delivery_agent_and_typos_block(self):
+        self.assertIn("--qa-agent agent-config-1", self.superset_launch()["message"])
+        for options, error in (({"model": "sonet"}, "not a Claude Code model"),
+                               ({"qa_effort": "high"}, "--qa-effort requires --qa-model"),
+                               ({"qa_model": "opus", "qa_effort": "huge"}, "not one of")):
+            with self.subTest(options=options), self.assertRaisesRegex(RunBlocked, error):
+                self.superset_launch(**options)
+
     def test_stacked_slice_starts_from_its_parent_branch(self):
         message = superset_launch_message(
             self.readiness, base="test", stack_parent="benjamin/ts-0"
@@ -68,12 +87,12 @@ class SupersetLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(RunBlocked, "benjamin/ts-0 does not exist"):
             self.superset_launch(stack_parent="benjamin/ts-0")
 
-    def test_created_workspace_is_unwrapped(self):
-        with patch(
-            "issue_delivery_orchestrator.superset_launch.run",
-            return_value=completed({"workspace": {"id": "ws-1"}}),
-        ):
-            self.assertEqual(create_superset_workspace("superset", {"arguments": []}), {"id": "ws-1"})
+    def test_created_workspace_keeps_the_agent_terminal(self):
+        payload = {"workspace": {"id": "ws-1"}, "agents": [{"sessionId": "term-1"}]}
+        with patch("issue_delivery_orchestrator.superset_launch.run", return_value=completed(payload)):
+            created = create_superset_workspace("superset", {"arguments": []})
+
+        self.assertEqual(launched_terminal(created), "term-1")
 
 
 class SupersetHostTests(unittest.TestCase):
