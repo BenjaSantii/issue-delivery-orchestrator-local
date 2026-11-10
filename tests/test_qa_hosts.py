@@ -6,6 +6,9 @@ from unittest.mock import patch
 import test_fresh_qa
 from issue_delivery_orchestrator import fresh_qa, observability_cli
 from issue_delivery_orchestrator.errors import RunBlocked
+import tempfile
+from pathlib import Path
+
 from issue_delivery_orchestrator.qa_hosts import claude_alias
 
 
@@ -168,6 +171,126 @@ class SupersetQaTests(unittest.TestCase):
                              ("haiku", "haiku"), ("claude-sonnet-5-5", "claude-sonnet-5-5")):
             with self.subTest(model=model):
                 self.assertEqual(claude_alias(model), alias)
+
+
+T3_MODELS = {"models": [{"slug": "claude-sonnet-5-5", "aliases": ["sonnet", "sonnet-5.5"]},
+                        {"slug": "claude-opus-5-5", "aliases": ["opus", "opus-5.5"]}]}
+
+
+class FakeT3:
+    """Answers the t3 thread commands the QA host makes."""
+
+    def __init__(self, worktree):
+        self.threads = {"thr-impl": {"threadId": "thr-impl", "providerInstanceId": "claude-dev4",
+                                     "model": "claude-opus-5-5", "worktreePath": worktree,
+                                     "status": "running", "activeRunId": "run-1", "title": "impl"}}
+        self.messages = {}
+        self.sent = []
+
+    def __call__(self, args, **kwargs):
+        if tuple(args[1:3]) == ("thread", "show"):
+            thread = self.threads.get(args[3])
+            if thread is None:
+                return SimpleNamespace(stdout="", returncode=1, stderr="unknown thread")
+            return FakeSuperset.reply({"thread": thread, "messages": self.messages.get(args[3], [])})
+        if tuple(args[1:3]) == ("thread", "send"):
+            self.sent.append((args[3], kwargs.get("input_text")))
+            return FakeSuperset.reply({"threadId": args[3]})
+        raise AssertionError(f"unexpected t3 call {args}")
+
+    def open_qa(self, request, thread_id="thr-qa", **overrides):
+        self.threads[thread_id] = {"threadId": thread_id, "title": request["title"],
+                                   "providerInstanceId": request["providerInstanceId"],
+                                   "model": request["model"], "status": "running",
+                                   "activeRunId": "run-qa", **overrides,
+                                   "worktreePath": overrides.get(
+                                       "worktreePath", request["workspace"]["worktreePath"])}
+        return thread_id
+
+
+class T3QaTests(unittest.TestCase):
+    setUp = test_fresh_qa.FreshQATests.setUp
+
+    def prepare(self, spec_lines=""):
+        self.state["mode"] = {"name": "t3"}
+        self.state.pop("qaSession", None)
+        spec = self.fixture.worktree / self.state["artifacts"]["spec"]
+        spec.write_text(spec.read_text() + spec_lines)
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(home, ignore_errors=True))
+        (home / "caches").mkdir()
+        (home / "caches" / "claude-dev4.json").write_text(json.dumps(T3_MODELS))
+        self.t3 = FakeT3(str(self.fixture.worktree))
+        patches = [
+            patch("issue_delivery_orchestrator.qa_hosts.run", side_effect=self.t3),
+            patch("issue_delivery_orchestrator.qa_hosts.t3_cli", return_value="t3"),
+            patch("issue_delivery_orchestrator.qa_hosts.time.sleep"),
+            patch.dict("os.environ", {"T3CODE_THREAD_ID": "thr-impl", "T3CODE_HOME": str(home)}),
+        ]
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+
+    def launch(self, **options):
+        return fresh_qa.launch(self.state, None, None, ["http://localhost:3000"], **options)
+
+    def test_the_agent_opens_the_qa_thread_in_this_worktree_and_the_engine_registers_it(self):
+        self.prepare()
+
+        requested = self.launch()
+
+        self.assertEqual(requested["status"], "needs_agent_launch")
+        request = requested["launch"]
+        self.assertEqual((request["providerInstanceId"], request["model"], request["effort"]),
+                         ("claude-dev4", "claude-sonnet-5-5", "high"))
+        self.assertEqual(request["workspace"], {"type": "existing_worktree",
+                                                "worktreePath": str(self.fixture.worktree)})
+        prompt = Path(request["messageFile"]).read_text()
+        self.assertIn("validation/qa-session.json", prompt)
+        self.assertIn("En T3 la revisión móvil", prompt)
+        self.assertNotIn("qaSession", self.state)
+
+        thread = self.t3.open_qa(request)
+        entry = self.launch(launched=thread)
+
+        self.assertEqual((entry["implementationSessionId"], entry["reviewSessionId"]), ("thr-impl", "thr-qa"))
+        self.assertEqual(entry["hostReceipt"], "t3-thread:thr-impl")
+        session = json.loads((self.fixture.root / "validation" / "qa-session.json").read_text())
+        self.assertEqual(session["reviewSessionId"], "thr-qa")
+        self.assertEqual(self.launch(), entry)
+
+    def test_a_thread_outside_the_worktree_or_with_another_model_is_rejected(self):
+        self.prepare("\nQA Model: opus-5-5-1m\nQA Effort: max\n")
+        request = self.launch()["launch"]
+        self.assertEqual(request["model"], "claude-opus-5-5")
+        for overrides, error in (({"worktreePath": "/tmp/elsewhere"}, "existing_worktree"),
+                                 ({"title": "QA"}, "must be titled"),
+                                 ({"model": "claude-sonnet-5-5"}, "provider/model")):
+            with self.subTest(overrides=overrides), self.assertRaisesRegex(RunBlocked, error):
+                self.launch(launched=self.t3.open_qa(request, "thr-bad", **overrides))
+        with self.assertRaisesRegex(RunBlocked, "not offered by T3"):
+            self.launch(model="gpt-5")
+
+    def test_wait_reports_a_reviewer_stopped_by_the_usage_limit_and_resume_wakes_it(self):
+        self.prepare()
+        entry = self.launch(launched=self.t3.open_qa(self.launch()["launch"]))
+        self.t3.threads["thr-qa"].update({"activeRunId": None, "status": "completed"})
+        self.t3.messages["thr-qa"] = [{"role": "assistant",
+                                       "text": "You've hit your session limit · resets 3pm"}]
+
+        waited = observability_cli.wait_for_qa(self.state, 1)
+
+        self.assertEqual(waited["status"], "completed")
+        self.assertEqual((waited["state"], waited["reason"], waited["resets"]),
+                         ("stopped", "usage-limit", "3pm"))
+        resumed = fresh_qa.resume(self.state)
+        self.assertTrue(resumed["resumed"])
+        self.assertEqual(self.t3.sent[-1][0], entry["reviewSessionId"])
+        self.assertIn("Retoma el QA", self.t3.sent[-1][1])
+
+    def test_launched_is_only_for_t3_runs(self):
+        with self.assertRaisesRegex(RunBlocked, "only in t3 mode"):
+            fresh_qa.qa_host("superset", "ws-1", "thr-qa")
 
 
 if __name__ == "__main__":

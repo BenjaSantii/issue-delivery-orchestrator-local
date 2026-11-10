@@ -366,6 +366,19 @@ workspace through `qa-session`, defaulting to the delivery agent with `sonnet` a
 (default `opus`) and `ISSUE_DELIVERY_SUPERSET_EFFORT` can replace the flags. The host needs the
 plugin installed on that agent.
 
+## T3 Code
+
+Inside a T3 Code thread (`T3CODE_THREAD_ID` is set) the orchestrator picks `t3` mode. Start the
+thread in a new worktree on the Linear branch, for example
+`t3 thread start . "<message>" --worktree origin/test --branch <linear-branch>`. The reviewer
+follows Superset's rule: `cua-driver`, or `playwright` on a Linux host without a display.
+
+Fresh QA needs the calling agent. T3's CLI cannot open a thread in an existing worktree, so the
+first `qa-session` returns `needs_agent_launch` with a request in `validation/qa-launch.json`.
+The agent opens the QA thread with its `t3_thread_launch` tool (`existing_worktree`), then runs
+`qa-session --launched <threadId>`. The engine checks the thread's worktree, title, provider and
+model before it registers it. `qa-wait` and `qa-resume` use `t3 thread show` and `t3 thread send`.
+
 ## Conductor Cloud
 
 Issues whose spec and tickets are already approved can run end to end in a Conductor Cloud

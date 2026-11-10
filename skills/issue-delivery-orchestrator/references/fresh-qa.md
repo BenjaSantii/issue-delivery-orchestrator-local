@@ -127,6 +127,42 @@ python3 <plugin-root>/scripts/issue-delivery <issue> qa-wait   # en segundo plan
 Nunca crear el QA a mano con `superset agents create`: se pierden el registro, el ID del QA y la
 herencia de casos.
 
+## En T3
+
+Desde el thread de T3 que implementa:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
+  --url http://localhost:<puerto> [--url ...] [--brief <ruta-en-el-run>] \
+  [--agent <provider-instance>] [--model <modelo> [--effort <esfuerzo>]]
+```
+
+El motor no puede abrir el thread del QA: el CLI de T3 sólo crea threads en la carpeta del proyecto
+o en un worktree nuevo, y el QA tiene que correr en este mismo checkout. Por eso el primer
+`qa-session` responde `status: needs_agent_launch` con un pedido y escribe
+`validation/qa-launch.json` y `validation/qa-prompt.md`. Con ese pedido:
+
+1. Llamar a la herramienta `t3_thread_launch` con el `title`, `providerInstanceId`, `model` y
+   `effort` del pedido, el workspace `{"type": "existing_worktree", "worktreePath": ...}` y como
+   mensaje el texto exacto de `messageFile`. No resumirlo ni editarlo.
+2. Repetir el mismo `qa-session` agregando `--launched <threadId>`. El motor comprueba con
+   `t3 thread show` que el thread corre en este worktree, con ese título, proveedor y modelo, y lo
+   registra. Escribe el ID en `validation/qa-session.json`, que el QA copia a `reviewSessionId`.
+3. Esperar con `qa-wait` en segundo plano.
+
+- **Generador.** Es el thread que llama, tomado de `T3CODE_THREAD_ID`.
+- **Proveedor y modelo.** En orden: flags de `qa-session`, `--qa-agent`/`--qa-model`/`--qa-effort`
+  del run, `QA Model`/`QA Effort` del spec y, por defecto, el proveedor del thread que implementa
+  con `sonnet` y esfuerzo `high` (`medium` con `Lane: small`). `--agent` es el ID de una instancia
+  de proveedor de T3, como `claudeAgent` o `claude-dev4`. El modelo se traduce al slug de T3
+  (`sonnet-5-5-1m` y `sonnet` pasan a `claude-sonnet-5-5`) con la lista de modelos que T3 guarda en
+  `~/.t3/caches/<instancia>.json`.
+- **Esperar y retomar.** `qa-wait` consulta `t3 thread show` hasta que el thread no tenga un run
+  activo y detecta el límite de uso en sus últimos mensajes. `qa-resume` le escribe con
+  `t3 thread send`. Si el thread ya no sirve, usar `qa-session --replace` y repetir el lanzamiento.
+
+No abrir el QA con `t3 thread start` ni en otro worktree: el registro lo rechaza.
+
 ## Otros hosts
 
 En Codex/Vanilla, usar el mecanismo del host para abrir un chat o reviewer con contexto

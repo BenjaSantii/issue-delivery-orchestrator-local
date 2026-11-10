@@ -19,7 +19,8 @@ Cuando se nombre otra skill incluida, invocarla con la sintaxis nativa del host:
 Codex o `/issue-delivery-orchestrator-local:<skill>` en Claude Code. Resolver `<plugin-root>` como
 el directorio instalado del plugin; en Claude Code corresponde a `${CLAUDE_PLUGIN_ROOT}`. Claude
 Code nunca selecciona modo `codex`: usar `conductor` dentro de Conductor Cloud, `superset` cuando
-exista su señal válida y `vanilla` en cualquier otro checkout preparado.
+exista su señal válida, `t3` dentro de un thread de T3 Code y `vanilla` en cualquier otro checkout
+preparado.
 
 Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la máquina local, usar
 `issue-delivery-cloud-launch`. Para iniciarlas en un host remoto de Superset, como una VPS, usar
@@ -45,6 +46,9 @@ Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la má
      por el usuario o su herramienta habitual. Ejecutar el setup local del repositorio antes del
      loop y seleccionar siempre `--mode vanilla`. En Claude Code, elegir este modo salvo que el
      checkout tenga una señal válida de Superset o de Conductor Cloud.
+   - `t3`: thread de T3 Code (`T3CODE_THREAD_ID`) abierto en un worktree nuevo sobre la rama de
+     Linear, por ejemplo con `t3 thread start . "<mensaje>" --worktree origin/<base> --branch
+     <rama-de-linear>`.
    - `conductor`: workspace de Conductor Cloud (`CONDUCTOR_IS_LOCAL=0`), normalmente creado con
      `issue-delivery-cloud-launch`. Preparar la VM según
      [conductor-cloud.md](references/conductor-cloud.md) y seleccionar `--mode conductor`.
@@ -55,12 +59,12 @@ Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la má
    delegar otro worktree mediante `create_thread`, subagentes, `git worktree add` o cualquier
    mecanismo equivalente. Si el worktree actual no es adoptable, bloquear en la misma sesión y
    pedir al usuario que abra manualmente otro con su setup local.
-4. Ejecutar, agregando `--mode <codex|superset|vanilla|conductor>` sólo cuando el usuario indique
+4. Ejecutar, agregando `--mode <codex|superset|vanilla|conductor|t3>` sólo cuando el usuario indique
    uno o el checkout sea de Conductor Cloud:
 
    ```bash
    python3 <plugin-root>/scripts/issue-delivery <issue> --worktree <ruta> \
-     [--mode <codex|superset|vanilla|conductor>] \
+     [--mode <codex|superset|vanilla|conductor|t3>] \
      [--base <branch>] [--stack-parent <rama-del-slice-padre>] [--new-run]
    ```
 
@@ -68,7 +72,7 @@ Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la má
    [slicing.md](references/slicing.md)): el run parte de esa rama y su PR apunta a ella.
 
 5. Confirmar `modeSource` y `developmentMode` en la respuesta. La detección usa, en orden:
-   `CONDUCTOR_IS_LOCAL=0` (Conductor Cloud), `SUPERSET_WORKSPACE_PATH` coincidente, raíces configuradas y componentes inequívocos de la ruta
+   `CONDUCTOR_IS_LOCAL=0` (Conductor Cloud), `T3CODE_THREAD_ID` (T3 Code), `SUPERSET_WORKSPACE_PATH` coincidente, raíces configuradas y componentes inequívocos de la ruta
    como `.codex` o `superset-worktrees`. Si no encuentra ninguna señal, elegir `vanilla` con
    `modeSource: vanilla-fallback`; si detecta señales contradictorias, pedir el modo al usuario. El
    modo determina el workspace y reviewer durante todo el run:
@@ -80,6 +84,10 @@ Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la má
      `WAYLAND_DISPLAY`), por ejemplo una VPS registrada como host de Superset, fija
      `reviewerMethod=playwright` con `reviewerSource=headless-host` y usa
      `issue-delivery-playwright-review`. `--reviewer playwright` fuerza lo mismo en otro host.
+   - `t3` adopta el worktree del thread ya conectado a la rama de Linear. Igual que `superset`,
+     usa `issue-delivery-cua-review` y en un host Linux sin pantalla fija `reviewerMethod=playwright`
+     con `reviewerSource=headless-host`. El QA abre su propio thread; ver
+     [fresh-qa.md](references/fresh-qa.md#en-t3).
    - `vanilla` adopta el checkout/worktree indicado, permite partir desde `origin/<base>`,
      `detached HEAD` seguro o la rama de la issue, conecta la rama de Linear y usa
      `issue-delivery-cua-review`.

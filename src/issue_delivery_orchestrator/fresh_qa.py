@@ -242,14 +242,20 @@ class ConductorQaHost:
         return stop_reason(self.cli, session_id)
 
 
-def qa_host(mode: str, workspace: str | None):
+def qa_host(mode: str, workspace: str | None, launched: str | None = None):
+    if launched and mode != "t3":
+        raise RunBlocked("--launched registers a QA thread only in t3 mode")
     if mode == "conductor":
         return ConductorQaHost(workspace)
     if mode == "superset":
         from .qa_hosts import SupersetQaHost
 
         return SupersetQaHost(workspace)
-    raise RunBlocked("Automatic QA chat creation is supported for new Conductor and Superset runs")
+    if mode == "t3":
+        from .qa_hosts import T3QaHost
+
+        return T3QaHost(workspace, launched)
+    raise RunBlocked("Automatic QA chat creation is supported for new Conductor, Superset and T3 runs")
 
 
 def resume_message(pinned: dict[str, str], note: str | None) -> str:
@@ -295,12 +301,14 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
               plan: dict[str, Any] | None = None, brief: str | None = None,
               host: str = "conductor") -> str:
     root = run_root(Path(state["worktree"]), state["runId"])
-    if host == "superset":
+    if host in ("superset", "t3"):
         identity = (f"reviewSessionId igual al valor de {root}/validation/qa-session.json, que el "
                     "controlador escribe al crear esta conversación (si aún no existe, espera unos "
                     "segundos y vuelve a leerlo)")
         surface = ("En este host sin pantalla la revisión móvil SIEMPRE es simulación web; no pidas "
-                   "teléfono, ADB ni emulador nativo. ")
+                   "teléfono, ADB ni emulador nativo. " if host == "superset" else
+                   "En T3 la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB ni "
+                   "emulador nativo. ")
     else:
         identity = "reviewSessionId igual al ID real de ESTA nueva conversación"
         surface = ("En Conductor la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB "
@@ -443,7 +451,7 @@ def launch(state: dict[str, Any], workspace: str | None, implementation_session:
            urls: list[str], model: str | None = None, effort: str | None = None,
            rerun: list[str] | None = None, brief: Path | None = None,
            replace: bool = False, user_approval: str | None = None,
-           agent: str | None = None) -> dict[str, Any]:
+           agent: str | None = None, launched: str | None = None) -> dict[str, Any]:
     if effort and not model:
         raise RunBlocked("--effort for QA requires --model; without both, QA inherits the calling chat")
     # After manual revision, blocker fixes are covered by tests and CI; QA runs only on the user's say.
@@ -456,7 +464,7 @@ def launch(state: dict[str, Any], workspace: str | None, implementation_session:
         raise RunBlocked("Register the local runtime and its URLs before starting QA")
     pinned = snapshot(state)
     previous = state.get("qaSession") or {}
-    host = qa_host(run_mode(state), workspace or previous.get("workspaceId"))
+    host = qa_host(run_mode(state), workspace or previous.get("workspaceId"), launched)
     exclude = (previous["reviewSessionId"],) if previous.get("reviewSessionId") else ()
     # Earlier QA terminals stay live, so the implementer registered last time is the safe default.
     caller = host.caller(implementation_session or previous.get("implementationSessionId"), exclude)
@@ -500,7 +508,15 @@ def launch(state: dict[str, Any], workspace: str | None, implementation_session:
                                          sort_keys=True).encode()).hexdigest()[:8]
     name = f"QA {state['runId']} {pinned['verifiedCommit'][:12]} {contract}"
     prompt = qa_prompt(state, pinned, urls, plan, _brief_path(state, brief), host=host.name)
-    review = host.create(state, name, prompt, configuration)
+    from .qa_hosts import QaLaunchRequired
+
+    try:
+        review = host.create(state, name, prompt, configuration)
+    except QaLaunchRequired as required:
+        return {"status": "needs_agent_launch", "launch": required.request,
+                "next": "Call t3_thread_launch with this title, provider, model, effort, workspace and "
+                        "the messageFile text as message; then rerun this qa-session command adding "
+                        "--launched <threadId>"}
     entry = register(state, caller, review, host_receipt=host.receipt(), pinned=pinned)
     entry.update({**configuration, "configurationSource": source, "workspaceId": host.workspace,
                   "baseCommit": _base(state, "HEAD")})

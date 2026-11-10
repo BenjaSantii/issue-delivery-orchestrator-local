@@ -353,6 +353,15 @@ class CliModeTests(unittest.TestCase):
                 ("superset", "superset-environment"),
             )
 
+    def test_detects_t3_from_its_thread_environment(self):
+        configuration = self._settings()
+        with patch.dict(os.environ, {"T3CODE_THREAD_ID": "thr-1",
+                                     "SUPERSET_WORKSPACE_PATH": ""}):
+            self.assertEqual(
+                _new_run_mode(None, Path("/tmp/.t3/worktrees/TS-1"), configuration),
+                ("t3", "t3-environment"),
+            )
+
     def test_detects_superset_from_path_marker_without_environment(self):
         configuration = self._settings()
 
@@ -469,6 +478,10 @@ class CliModeTests(unittest.TestCase):
             self.assertEqual(
                 _new_run_reviewer("vanilla", None),
                 ("cua-driver", "mode-default"),
+            )
+            self.assertEqual(
+                _new_run_reviewer("t3", None),
+                ("playwright", "headless-host"),
             )
 
     def test_superset_host_with_display_keeps_cua(self):

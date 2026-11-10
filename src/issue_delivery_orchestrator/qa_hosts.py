@@ -1,9 +1,11 @@
-"""Where a fresh QA conversation lives: a Conductor workspace or a Superset workspace."""
+"""Where a fresh QA conversation lives: a Superset workspace terminal or a T3 thread."""
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -121,3 +123,135 @@ class SupersetQaHost:
             raise RunBlocked("The QA agent is still working; run qa-wait again")
         return state
 
+
+
+T3_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+T3_LAUNCH_FILE = Path("validation") / "qa-launch.json"
+T3_PROMPT_FILE = Path("validation") / "qa-prompt.md"
+
+
+class QaLaunchRequired(Exception):
+    """T3 opens a chat in an existing worktree only through its agents' t3_thread_launch tool."""
+
+    def __init__(self, request: dict[str, Any]):
+        super().__init__("The calling T3 agent must launch the QA thread")
+        self.request = request
+
+
+def t3_cli() -> str:
+    for candidate in (shutil.which("t3"), Path.home() / ".local/bin/t3", Path.home() / ".t3/bin/t3"):
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    raise RunBlocked("The t3 CLI is not installed on this host")
+
+
+def t3_model(provider: str, model: str) -> str:
+    """Specs and runs name models as sonnet or sonnet-5-5-1m; T3 takes its own slug."""
+    alias = (claude_alias(model) or "").replace("[1m]", "")
+    cache = Path(os.environ.get("T3CODE_HOME") or Path.home() / ".t3") / "caches" / f"{provider}.json"
+    try:
+        models = json.loads(cache.read_text()).get("models") or []
+    except (OSError, ValueError):
+        models = []
+    for item in models:
+        if alias == item.get("slug") or alias in (item.get("aliases") or []):
+            return str(item["slug"])
+    if models:
+        slugs = ", ".join(str(item.get("slug")) for item in models)
+        raise RunBlocked(f"QA model {model} is not offered by T3 provider {provider}: {slugs}")
+    return alias
+
+
+class T3QaHost:
+    """The QA agent runs in its own T3 thread bound to the implementer's worktree."""
+
+    name = "t3"
+
+    def __init__(self, workspace: str | None, launched: str | None = None):
+        self.workspace = workspace or os.environ.get("T3CODE_THREAD_ID", "").strip()
+        if not self.workspace:
+            raise RunBlocked("Run qa-session inside the T3 thread of the implementation or pass "
+                             "--workspace with its thread ID")
+        self.cli = t3_cli()
+        self.launched = launched
+
+    def _thread(self, thread_id: str) -> dict[str, Any]:
+        shown = _json_output(run([self.cli, "thread", "show", thread_id, "--messages", "3",
+                                  "--json"]).stdout)
+        if not isinstance(shown.get("thread"), dict):
+            raise RunBlocked(f"T3 does not know thread {thread_id}")
+        return shown
+
+    def caller(self, implementation_session: str | None, exclude: tuple[str, ...] = ()) -> str:
+        caller = implementation_session or self.workspace
+        if caller in exclude:
+            raise RunBlocked("The implementation thread cannot be its own QA thread")
+        self._thread(caller)
+        return caller
+
+    def configuration(self, agent, model, effort, caller, spec, lane):
+        source = "explicit" if model else ("spec" if spec[0] else "default")
+        if not model:
+            model, effort = spec if spec[0] else (
+                SUPERSET_SMALL_LANE_QA_DEFAULT if lane == "small" else SUPERSET_QA_DEFAULT)
+        if effort and effort not in T3_EFFORTS:
+            raise RunBlocked(f"QA effort {effort} is not one of {', '.join(T3_EFFORTS)}")
+        provider = agent or self._thread(caller)["thread"].get("providerInstanceId")
+        if not provider:
+            raise RunBlocked("Cannot tell the implementation thread's T3 provider; pass --agent")
+        return {"agent": str(provider), "model": t3_model(str(provider), model),
+                "effort": effort or ""}, source
+
+    def status(self, session_id: str) -> str | None:
+        thread = self._thread(session_id)["thread"]
+        return "working" if thread.get("activeRunId") else thread.get("status")
+
+    def create(self, state: dict[str, Any], name: str, prompt: str, configuration: dict[str, str]) -> str:
+        root = run_root(Path(state["worktree"]), state["runId"])
+        if not self.launched:
+            (root / T3_PROMPT_FILE).parent.mkdir(parents=True, exist_ok=True)
+            (root / T3_PROMPT_FILE).write_text(prompt)
+            request = {"title": name, "providerInstanceId": configuration["agent"],
+                       "model": configuration["model"], "effort": configuration["effort"],
+                       "workspace": {"type": "existing_worktree", "worktreePath": state["worktree"]},
+                       "messageFile": str(root / T3_PROMPT_FILE)}
+            (root / T3_LAUNCH_FILE).write_text(json.dumps(request, indent=2) + "\n")
+            raise QaLaunchRequired({**request, "requestFile": str(root / T3_LAUNCH_FILE)})
+        thread = self._thread(self.launched)["thread"]
+        expected = Path(state["worktree"]).expanduser().resolve()
+        if Path(str(thread.get("worktreePath") or "")).expanduser().resolve() != expected:
+            raise RunBlocked("The QA thread does not run in this run's worktree; launch it with "
+                             "existing_worktree")
+        if thread.get("title") != name:
+            raise RunBlocked(f"The QA thread must be titled {name!r}; launch it from qa-launch.json")
+        if (thread.get("providerInstanceId"), thread.get("model")) != (
+                configuration["agent"], configuration["model"]):
+            raise RunBlocked("The QA thread's provider/model does not match the requested configuration")
+        path = root / SESSION_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"reviewSessionId": self.launched, "name": name}, indent=2) + "\n")
+        return self.launched
+
+    def receipt(self) -> str:
+        return f"t3-thread:{self.workspace}"
+
+    def send(self, session_id: str, message: str) -> None:
+        run([self.cli, "thread", "send", session_id, "-"], input_text=message)
+
+    def stop_reason(self, session_id: str) -> dict[str, Any] | None:
+        messages = self._thread(session_id).get("messages") or []
+        tail = "\n".join(str(item.get("text") or "") for item in messages if isinstance(item, dict))[-4000:]
+        match = _LIMIT.search(tail)
+        if not match:
+            return None
+        return {"reason": "usage-limit", "resets": match.group(1).strip() if match.group(1) else None}
+
+    def wait(self, session_id: str, timeout_seconds: float, poll_seconds: float) -> str | None:
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            state = self.status(session_id)
+            if state != "working":
+                return state
+            if time.monotonic() >= deadline:
+                raise RunBlocked("The QA agent is still working; run qa-wait again")
+            time.sleep(poll_seconds)

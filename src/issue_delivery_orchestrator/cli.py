@@ -1309,6 +1309,8 @@ def _requested_worktree(explicit: Path | None, mode: str | None) -> Path | None:
         return explicit
     if mode in {"codex", "vanilla", "conductor"}:
         return None
+    if mode in {None, "t3"} and os.environ.get("T3CODE_THREAD_ID", "").strip():
+        return Path.cwd()
     raw = os.environ.get("SUPERSET_WORKSPACE_PATH")
     return Path(raw) if raw else None
 
@@ -1323,6 +1325,9 @@ def _new_run_mode(
 
     if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
         return "conductor", "conductor-cloud-environment"
+
+    if os.environ.get("T3CODE_THREAD_ID", "").strip():
+        return "t3", "t3-environment"
 
     candidate = worktree.expanduser().resolve()
     superset_workspace = os.environ.get("SUPERSET_WORKSPACE_PATH", "").strip()
@@ -1355,11 +1360,11 @@ def _new_run_reviewer(mode: str, explicit: str | None) -> tuple[str, str]:
         if not mode_allows_reviewer(mode, explicit):
             raise RunBlocked(
                 f"{mode} mode cannot use reviewer {explicit}; codex uses codex-browser, "
-                "superset uses cua-driver or playwright, vanilla uses cua-driver and "
+                "superset and t3 use cua-driver or playwright, vanilla uses cua-driver and "
                 "conductor uses playwright"
             )
         return explicit, "explicit"
-    if mode == "superset" and _is_headless_host():
+    if mode in {"superset", "t3"} and _is_headless_host():
         return "playwright", "headless-host"
     return MODE_REVIEWERS[mode], "mode-default"
 
@@ -1501,12 +1506,12 @@ def _next_action(state: dict[str, Any]) -> str:
         )
     if (
         state.get("currentPhase") == "manual-revision"
-        and run_mode(state) == "superset"
+        and run_mode(state) in {"superset", "t3"}
         and review_method(state) == "playwright"
     ):
         return (
             "Verify the UI with issue-delivery-playwright-review from this headless "
-            "Superset host; use mobile-web-reviewer for phone stories."
+            "host; use mobile-web-reviewer for phone stories."
         )
     if (
         state.get("currentPhase") == "manual-revision"
