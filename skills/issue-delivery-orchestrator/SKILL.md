@@ -22,7 +22,8 @@ Code nunca selecciona modo `codex`: usar `conductor` dentro de Conductor Cloud, 
 exista su señal válida y `vanilla` en cualquier otro checkout preparado.
 
 Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la máquina local, usar
-`issue-delivery-cloud-launch`. Dentro del workspace cloud, leer
+`issue-delivery-cloud-launch`. Para iniciarlas en un host remoto de Superset, como una VPS, usar
+`issue-delivery-superset-launch`. Dentro del workspace cloud, leer
 [conductor-cloud.md](references/conductor-cloud.md) antes de iniciar el run.
 
 ## Iniciar o reanudar

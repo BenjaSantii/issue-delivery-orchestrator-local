@@ -104,6 +104,15 @@ from .state import (
 )
 from .util import ensure_within, read_json, run
 from . import implement_worker, observability_cli, runtime_recipe
+from .superset_launch import (
+    DEFAULT_AGENT as SUPERSET_DEFAULT_AGENT,
+    build_superset_launch,
+    create_superset_workspace,
+    existing_issue_workspace,
+    superset_cli,
+    superset_host,
+    superset_project_id,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -166,6 +175,31 @@ def parser() -> argparse.ArgumentParser:
         "--confirm",
         action="store_true",
         help="Create the workspace; without it the command only prints the plan",
+    )
+    superset_parser = actions.add_parser(
+        "superset-launch",
+        help="Check that the issue has approved spec/tickets and start it on a Superset host",
+    )
+    superset_parser.add_argument(
+        "--host",
+        default=os.environ.get("ISSUE_DELIVERY_SUPERSET_HOST", ""),
+        help="Superset host (machine ID or name) that runs the delivery",
+    )
+    superset_parser.add_argument(
+        "--agent",
+        default=os.environ.get("ISSUE_DELIVERY_SUPERSET_AGENT", SUPERSET_DEFAULT_AGENT),
+        help="Agent preset or HostAgentConfig UUID on that host",
+    )
+    superset_parser.add_argument(
+        "--model",
+        default=os.environ.get("ISSUE_DELIVERY_SUPERSET_MODEL", ""),
+        help="Model for the delivery agent (default opus)",
+    )
+    superset_parser.add_argument("--superset-project", help="Superset project ID")
+    superset_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Create the workspace and start the agent; without it the command only prints the plan",
     )
     recover = actions.add_parser(
         "cloud-recover",
@@ -364,6 +398,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return read_linear_issue(args.issue)
     if args.action == "cloud-launch":
         return cloud_launch(args)
+    if args.action == "superset-launch":
+        return superset_launch(args)
     if args.action == "cloud-resume":
         return cloud_resume(args)
     if args.action == "cloud-recover":
@@ -608,6 +644,57 @@ def cloud_resume(args: argparse.Namespace) -> dict[str, Any]:
         cli, workspace_id, message, agent=args.agent, model=args.model
     )
     return {**plan, "created": True, "session": session}
+
+
+def superset_launch(args: argparse.Namespace) -> dict[str, Any]:
+    configuration = settings()
+    repository = _repository(configuration.repository, None)
+    linear, credential_source = _verified_linear()
+    readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
+    if readiness["problems"]:
+        raise RunBlocked("; ".join(readiness["problems"]))
+    if not args.stack_parent:
+        drop_merged_blockers(readiness, repository, configuration.pr_target_branch)
+    stack_parent = stack_parent_for(readiness, args.stack_parent)
+    cli = superset_cli()
+    host = superset_host(cli, args.host)
+    existing = existing_issue_workspace(cli, str(host["id"]), readiness["branch"])
+    if existing:
+        raise RunBlocked(
+            f"{readiness['identifier']} already has workspace {existing.get('name')} "
+            f"({existing.get('id')}) on {host.get('name')}; continue there instead of launching again"
+        )
+    project_id = args.superset_project or superset_project_id(cli, repository)
+    launch = build_superset_launch(
+        readiness,
+        configuration,
+        repository,
+        host_id=str(host["id"]),
+        project_id=project_id,
+        base=args.base,
+        stack_parent=stack_parent,
+        agent=args.agent,
+        model=args.model or None,
+        implement_model=args.implement_model,
+    )
+    plan = {
+        "credentialSource": credential_source,
+        "readiness": readiness,
+        "stackParent": stack_parent,
+        "host": {"id": host["id"], "name": host.get("name")},
+        "projectId": project_id,
+        "agent": launch["agent"],
+        "model": launch["model"],
+        "implementModel": launch["implementModel"],
+        "message": launch["message"],
+        "workspaceBase": launch["workspaceBase"],
+        "workspaceBaseBehindPrTarget": launch["behindTarget"],
+        "created": False,
+    }
+    if not args.confirm:
+        return plan
+    workspace = create_superset_workspace(cli, launch)
+    return {**plan, "created": True, "workspace": workspace}
 
 
 def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:

@@ -37,6 +37,7 @@ cleaned when resumed.
 - `$issue-delivery-playwright-review`
 - `$issue-delivery-mobile-web-review` (also packaged as the Claude Code agent `mobile-web-reviewer`)
 - `$issue-delivery-cloud-launch`
+- `$issue-delivery-superset-launch`
 
 The Browser skill, Figma connector, GitHub CLI, Cua Driver, Playwright, and the target repository's
 runtime commands remain environment capabilities. Codex Browser review is available only in Codex
@@ -342,6 +343,24 @@ posts a `Resultado QA` comment in Linear (and in the PR once it exists) with scr
 command output. The `manual-revision` checkpoint requires every case to be `PASS`, or `WAIVED`
 with the user's own instruction. Specs approved before this section keep the previous flow. See
 `skills/issue-delivery-orchestrator/references/qa-script.md`.
+
+## Superset hosts
+
+The Grill can run on your machine and the delivery on a remote Superset host, such as a VPS. Once
+the spec and tickets are published in Linear:
+
+```bash
+python3 scripts/issue-delivery LOG-123 --base test superset-launch --host <machine-id-or-name>
+python3 scripts/issue-delivery LOG-123 --base test superset-launch --host <machine-id-or-name> --confirm
+```
+
+The first command runs the same readiness checks as `cloud-launch`, plus host online and no
+active workspace on the issue branch, and prints the plan. `--confirm` creates the workspace on
+the Linear branch and starts the agent with a first message that runs the orchestrator with
+`--mode superset` and skips the Grill. `ISSUE_DELIVERY_SUPERSET_HOST`, `ISSUE_DELIVERY_SUPERSET_AGENT`
+(preset or host agent config UUID) and `ISSUE_DELIVERY_SUPERSET_MODEL` (default `opus`) can replace
+the flags. The host needs the plugin installed and its worktree folder trusted in each Claude
+profile, or the agent stops at the folder trust prompt before reading the message.
 
 ## Conductor Cloud
 
