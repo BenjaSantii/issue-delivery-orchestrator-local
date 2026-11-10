@@ -48,9 +48,8 @@ Dentro del workspace cloud, leer
      por el usuario o su herramienta habitual. Ejecutar el setup local del repositorio antes del
      loop y seleccionar siempre `--mode vanilla`. En Claude Code, elegir este modo salvo que el
      checkout tenga una señal válida de Superset o de Conductor Cloud.
-   - `t3`: thread de T3 Code (`T3CODE_THREAD_ID`) abierto en un worktree nuevo sobre la rama de
-     Linear, por ejemplo con `t3 thread start . "<mensaje>" --worktree origin/<base> --branch
-     <rama-de-linear>`.
+   - `t3`: thread de T3 Code (`T3CODE_THREAD_ID`) en un worktree nuevo, creado con `t3-launch` o
+     desde la app. Desde la app el worktree nace en una rama `t3/...` de T3.
    - `conductor`: workspace de Conductor Cloud (`CONDUCTOR_IS_LOCAL=0`), normalmente creado con
      `issue-delivery-cloud-launch`. Preparar la VM según
      [conductor-cloud.md](references/conductor-cloud.md) y seleccionar `--mode conductor`.
@@ -86,7 +85,8 @@ Dentro del workspace cloud, leer
      `WAYLAND_DISPLAY`), por ejemplo una VPS registrada como host de Superset, fija
      `reviewerMethod=playwright` con `reviewerSource=headless-host` y usa
      `issue-delivery-playwright-review`. `--reviewer playwright` fuerza lo mismo en otro host.
-   - `t3` adopta el worktree del thread ya conectado a la rama de Linear. Igual que `superset`,
+   - `t3` adopta el worktree del thread. Si está en una rama `t3/...` de T3 o en la base, lo
+     cambia a la rama de Linear, siempre que no tenga commits fuera de la base. Igual que `superset`,
      usa `issue-delivery-cua-review` y en un host Linux sin pantalla fija `reviewerMethod=playwright`
      con `reviewerSource=headless-host`. El QA abre su propio thread; ver
      [fresh-qa.md](references/fresh-qa.md#en-t3).

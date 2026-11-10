@@ -956,6 +956,13 @@ def bootstrap(
             args.base,
             issue.identifier,
         )
+    elif mode == "t3":
+        worktree = workspace.adopt_t3(
+            requested_worktree,
+            issue.branch_name,
+            args.base,
+            issue.identifier,
+        )
     elif mode == "vanilla":
         worktree = workspace.adopt_vanilla(
             requested_worktree,

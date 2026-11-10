@@ -81,6 +81,31 @@ class GitWorkspace:
             allow_discard=allow_discard,
         )
 
+    def adopt_t3(
+        self,
+        path: Path,
+        expected_branch: str,
+        base: str,
+        issue: str,
+    ) -> Worktree:
+        # A thread created in the T3 app starts on T3's own t3/<name> branch; the run moves it to
+        # the Linear branch as long as that branch's history is contained in the base.
+        branch = run(["git", "branch", "--show-current"], cwd=self._validated_worktree(path)).stdout.strip()
+        if branch and not (
+            _matches_issue_branch(branch, expected_branch, issue)
+            or branch == base
+            or branch.casefold().startswith(("t3/", "t3-"))
+        ):
+            raise RunBlocked(f"T3 worktree branch {branch} does not match Linear branch {expected_branch}")
+        return self._adopt_switchable(
+            path,
+            expected_branch,
+            base,
+            issue,
+            mode="t3",
+            allowed_start_branches=None,
+        )
+
     def adopt_conductor(
         self,
         path: Path,

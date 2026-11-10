@@ -243,6 +243,25 @@ class GitWorkspaceTests(unittest.TestCase):
                     "TS-22",
                 )
 
+    def test_t3_moves_its_own_branch_to_the_linear_branch_and_rejects_others(self):
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = self._conductor_checkout(Path(raw))
+            git(checkout, "branch", "-m", "t3/1f2e3d4c")
+            (checkout / ".env").write_text("preserve\n")
+
+            workspace = GitWorkspace(checkout)
+            workspace.fetch("test")
+            result = workspace.adopt_t3(checkout, "benjamin/ts-23-t3-mode", "test", "TS-23")
+
+            self.assertEqual(result.branch, "benjamin/ts-23-t3-mode")
+            self.assertEqual(result.created_from, "t3:origin/test")
+            self.assertEqual((checkout / ".env").read_text(), "preserve\n")
+            self.assertEqual(git(checkout, "branch", "--show-current"), "benjamin/ts-23-t3-mode")
+
+            git(checkout, "switch", "-c", "feature/other", "origin/test")
+            with self.assertRaisesRegex(RunBlocked, "does not match Linear branch"):
+                workspace.adopt_t3(checkout, "benjamin/ts-24-t3-mode", "test", "TS-24")
+
     def test_inferred_vanilla_rejects_dirty_state_without_discarding(self):
         workspace = GitWorkspace(Path("/tmp/repository"))
         dirty = (" M tracked.txt", "?? scratch.txt")

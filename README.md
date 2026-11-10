@@ -382,10 +382,10 @@ the thread starts at the Grill, publishes both when you approve them and then de
 them it goes straight to delivery. `--provider` (default `claudeAgent`) and `--model` (default
 `opus`) pick the agent, also through `ISSUE_DELIVERY_T3_PROVIDER` and `ISSUE_DELIVERY_T3_MODEL`.
 
-Inside a T3 Code thread (`T3CODE_THREAD_ID` is set) the orchestrator picks `t3` mode. Start the
-thread in a new worktree on the Linear branch, for example
-`t3 thread start . "<message>" --worktree origin/test --branch <linear-branch>`. The reviewer
-follows Superset's rule: `cua-driver`, or `playwright` on a Linux host without a display.
+Inside a T3 Code thread (`T3CODE_THREAD_ID` is set) the orchestrator picks `t3` mode. A thread
+created in the app starts on T3's own `t3/...` branch; the run switches it to the Linear branch
+when it has no commits outside the base. The reviewer follows Superset's rule: `cua-driver`, or
+`playwright` on a Linux host without a display.
 
 Fresh QA needs the calling agent. T3's CLI cannot open a thread in an existing worktree, so the
 first `qa-session` returns `needs_agent_launch` with a request in `validation/qa-launch.json`.
