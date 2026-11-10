@@ -349,8 +349,8 @@ el reviewer web persistido y conserva los demás gates.
 3. Ramificar exclusivamente por `developmentMode` y `reviewerMethod`:
 
    - `superset` con `reviewerMethod=playwright`: seguir la rama `conductor` de abajo desde el
-     checkout adoptado. Las reglas exclusivas de Conductor Cloud (LocalReviewer omitido, QA sólo
-     por web, credenciales del proyecto de Conductor) no aplican.
+     checkout adoptado. Las reglas exclusivas de Conductor Cloud (QA sólo por web, credenciales
+     del proyecto de Conductor) no aplican.
    - `superset` o `vanilla` con `reviewerMethod=cua-driver`: invocar `issue-delivery-cua-review` desde el checkout adoptado.
      Usar el escritorio local (host) por defecto y conservar `reviewerMethod=cua-driver`:
      ejecutar `launch-browser --url <url-local>` para abrir el navegador del run.
@@ -429,21 +429,13 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
    `issue-delivery-implement` antes de seguir. Nunca pushear una branch que ya se sabe roja en
    lint, typecheck, tests o chequeos de
    contrato/migraciones.
-2. **Review previa a la PR (fuera de Conductor).** En modo `conductor`, omitir LocalReviewer y
-   continuar tras QA y paridad CI: no pedir permisos, login, tokens ni un recibo para esta etapa.
-   Declarar en la PR `LocalReviewer: NOT_RUN — no requerido en Conductor`; no fabricar PASS.
-   Fuera de Conductor, pedir permiso para una ejecución de `local-reviewer` sobre la branch,
-   indicando SHA, alcance y provider/modo. Ejecutarla sólo con autorización vigente, según
-   `pr-blocker-convergence` y `pr-quality.md`. Una repetición exige permiso nuevo o una ejecución
-   restante dentro de un ciclo explícitamente autorizado. Procesar sus findings con
-   `pr-blocker-convergence` como ronda `00` local. Registrar el recibo contra el HEAD exacto:
-
-   ```bash
-   python3 <plugin-root>/scripts/issue-delivery <issue> record-pre-review --receipt <ruta>
-   ```
-
-   Fuera de Conductor, `ensure-pr` rechaza crear una PR nueva sin un recibo `PASS` o `SKIP_ONLY`
-   del HEAD actual. Las revisiones posteriores de GitHub se mantienen en todos los modos.
+2. **Review previa a la PR (opcional).** LocalReviewer no es requisito en ningún modo. No
+   ejecutarlo, no pedir permiso para correrlo y no esperar un recibo para abrir la PR: seguir tras
+   QA y paridad CI y declarar en la validación `LocalReviewer: NOT_RUN — opcional`, sin fabricar
+   PASS. Si el usuario pide una ejecución, correrla con el alcance, SHA y provider/modo que
+   autorice, según `pr-blocker-convergence` y [pr-quality.md](references/pr-quality.md), procesar
+   sus findings como ronda `00` y registrar el recibo con `record-pre-review --receipt <ruta>`.
+   Las revisiones posteriores de GitHub se mantienen en todos los modos.
 3. **PR y validación visible.** Crear el body dentro del run, escribir
    `validation/pr-validation.md` y ejecutar:
 

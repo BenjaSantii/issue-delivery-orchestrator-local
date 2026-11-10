@@ -51,8 +51,8 @@ y los tickets en Linear; el host remoto los lee de ahí y sigue con Implement �
    Claude Code pide confiar en cada worktree nuevo y no lee el mensaje hasta que alguien
    responde: el comando detecta ese aviso en la terminal, lo acepta y espera a que el agente
    empiece a trabajar.
-5. Informar el ID del workspace y su `webUrl`. El run sigue en ese host; las decisiones HITL y los
-   permisos de LocalReviewer se responden en ese chat.
+5. Informar el ID del workspace y su `webUrl`. El run sigue en ese host; las decisiones HITL se
+   responden en ese chat.
 
 No lanzar issues sin spec y tickets aprobados: para esas, el siguiente paso es el Grill
 (`issue-delivery-grill`) en una sesión interactiva.

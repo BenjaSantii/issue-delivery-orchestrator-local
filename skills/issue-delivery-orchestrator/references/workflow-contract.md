@@ -23,9 +23,9 @@ Todo artifact debe estar dentro del worktree. El motor rechaza paths externos.
 
 - Verificar blockers significa inspeccionar y clasificar el feedback existente. No autoriza
   reparaciones, tests, commits, push o LocalReviewer, incluso si el run ya está en convergencia.
-- Cada uso o ciclo de LocalReviewer requiere permiso explícito y acotado. Por defecto cubre una
-  ejecución. Un ciclo requiere alcance y número máximo explícitos. No ampliar ese permiso ni
-  revocar una cancelación por un "continúa". Los gates de review no conceden autorización.
+- LocalReviewer es opcional y no bloquea la PR. Se ejecuta sólo cuando el usuario lo pide, con
+  permiso explícito y acotado: por defecto cubre una ejecución y un ciclo requiere alcance y número
+  máximo explícitos. No ampliar ese permiso ni revocar una cancelación por un "continúa".
 
 - Reparación por ticket: 3 ciclos.
 - Revisión UI-reparación: 5 ciclos.

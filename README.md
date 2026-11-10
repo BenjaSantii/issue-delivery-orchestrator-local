@@ -65,9 +65,9 @@ the correct invocation syntax.
 
 ## Blocker checks and local review permission
 
-Conductor does not require or run LocalReviewer before opening a PR. Report it as NOT_RUN;
-browser QA, CI parity and GitHub review convergence remain required. Other modes keep the
-local-review gate and permissions below.
+LocalReviewer is optional in every mode. The orchestrator does not run it or wait for its receipt
+before opening a PR, and reports it as NOT_RUN; browser QA, CI parity and GitHub review
+convergence remain required. When the user asks for a run, the permissions below apply.
 Fresh Conductor QA chats inherit the calling chat's agent, model and reasoning effort; they
 do not force Codex or a fixed model. The review still starts with a new conversation context.
 Conductor browser apps use localhost ports 3001–3004. Native contracts (GPS lifecycle,

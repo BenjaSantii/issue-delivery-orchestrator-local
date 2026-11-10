@@ -202,8 +202,9 @@ def superset_launch_message(
         "teléfono. El QA corre en otro chat de este workspace: créalo con `qa-session` (toma "
         "agente y modelo del run), espéralo con `qa-wait` en segundo plano y, si se detiene, "
         "retómalo con `qa-resume` o `qa-session --replace`. No crees sesiones de QA a mano.\n"
-        "5. Pausa sólo ante tickets HITL, decisiones de tamaño, permisos de LocalReviewer o "
-        "bloqueos reales; explica la acción mínima que necesitas.\n"
+        "5. Pausa sólo ante tickets HITL, decisiones de tamaño o bloqueos reales; explica la "
+        "acción mínima que necesitas. LocalReviewer es opcional: no lo ejecutes ni pidas permiso "
+        "para correrlo.\n"
     )
 
 

@@ -1,8 +1,8 @@
 # QA en conversación nueva y consecuencias persistidas
 
 Aplica sólo a runs con `observabilityVersion: 1`. No modificar el contrato ni los chats de
-ejecuciones existentes. Complementa la revisión de código. LocalReviewer no es requerido en
-Conductor; fuera de Conductor conserva sus permisos y gates. La calibración con ejemplos
+ejecuciones existentes. Complementa la revisión de código. LocalReviewer es opcional en todos los
+modos. La calibración con ejemplos
 humanos queda fuera de esta implementación.
 
 ## Abrir el reviewer

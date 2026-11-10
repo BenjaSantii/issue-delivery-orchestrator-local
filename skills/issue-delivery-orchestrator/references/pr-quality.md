@@ -11,23 +11,17 @@ un stack) sobre el delta completo.
 Consumir su recibo; reparar cada `branch-caused` con `issue-delivery-implement` y repetir. Un
 `base-failure` o `environment` se declara en el bloque de validación, no se oculta.
 
-## 2. Review previa a la PR
+## 2. Review previa a la PR (opcional)
 
-En modo `conductor`, esta etapa no es requerida: no ejecutar ni esperar LocalReviewer, no pedir
-credenciales para CLIs anidados y no fabricar un recibo PASS. Continuar con la PR después de QA
-y paridad CI, declarando `LocalReviewer: NOT_RUN — no requerido en Conductor` en la validación.
+LocalReviewer no es requisito en ningún modo. Por defecto no ejecutarlo, no pedir permiso para
+correrlo, no pedir credenciales para CLIs anidados y no fabricar un recibo PASS. Continuar con la
+PR después de QA y paridad CI, declarando `LocalReviewer: NOT_RUN — opcional` en la validación.
 Se mantienen las revisiones y la convergencia de GitHub. El resto de esta sección aplica sólo
-fuera de Conductor.
+cuando el usuario pide una ejecución.
 
-Antes de invocar LocalReviewer, pedir permiso explícito para esa ejecución, indicando SHA,
-alcance, provider/modo y número máximo de ejecuciones. El permiso cubre una ejecución salvo que
-el usuario autorice un ciclo con un límite explícito. La aprobación del spec, la entrega, las
-reparaciones, los tests o la PR no concede ese permiso. Respetar las cancelaciones previas y
-las reglas de `pr-blocker-convergence`.
-
-Si no hay autorización, conservar el gate pendiente y declarar la review NOT_RUN o CANCELLED.
-Completar primero el trabajo independiente autorizado. No ejecutar la review para desbloquear
-el gate por cuenta propia ni inventar un PASS.
+Esa ejecución usa el alcance, SHA, provider/modo y número máximo de ejecuciones que el usuario
+autorizó. El permiso cubre una ejecución salvo que el usuario autorice un ciclo con un límite
+explícito. Respetar las cancelaciones previas y las reglas de `pr-blocker-convergence`.
 
 Invocar la skill `local-reviewer` (`$local-reviewer` en Codex o `/local-reviewer:local-reviewer` en
 Claude Code) sólo con permiso vigente, con alcance de branch delta y sin publicar:
@@ -42,8 +36,8 @@ python3 <local-reviewer-root>/scripts/local-reviewer --provider auto \
   cuando el spec declare riesgos de concurrencia, escrituras con resultado incierto o ciclo de vida
   asíncrono.
 - Nunca pasar `--publish`.
-- Si `local-reviewer` no está instalado o ningún provider está autenticado, bloquear con el error
-  exacto. No abrir la PR sin esta review.
+- Si `local-reviewer` no está instalado o ningún provider está autenticado, informar el error
+  exacto al usuario y seguir con la PR declarando la review NOT_RUN.
 
 Procesar los findings con `pr-blocker-convergence` como ronda `00` en la misma memoria del run
 (`history/round-00.json`), con las mismas disposiciones, reparaciones por causa raíz y detección de

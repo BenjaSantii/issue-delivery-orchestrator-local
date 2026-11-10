@@ -8,7 +8,6 @@ from issue_delivery_orchestrator.errors import RunBlocked
 from issue_delivery_orchestrator.pr_quality import (
     VALIDATION_END,
     VALIDATION_START,
-    assert_pre_review_current,
     assert_validation_current,
     merge_validation_block,
     publish_validation,
@@ -89,32 +88,12 @@ class PrQualityTests(unittest.TestCase):
             self._receipt("ok.md", f"SHA: {self.sha[:12]}\nResultado: PASS\n"),
         )
         self.assertEqual(recorded["sha"], self.sha)
-        assert_pre_review_current(self.state)
-
-        self._commit()
-        with self.assertRaises(RunBlocked):
-            assert_pre_review_current(self.state)
 
     def test_rejects_receipts_outside_the_run_directory(self):
         outside = self.worktree / "receipt.md"
         outside.write_text(f"SHA: {self.sha}\nResultado: PASS\n")
         with self.assertRaises(Exception):
             record_pre_review(self.state, outside)
-
-    def test_conductor_does_not_require_or_fabricate_a_local_review(self):
-        self.state["mode"] = {"name": "conductor"}
-        assert_pre_review_current(self.state)
-        self.assertNotIn("preReview", self.state)
-        self.state["preReview"] = {"sha": "old", "result": "PASS"}
-        assert_pre_review_current(self.state)
-        self.assertEqual(self.state["preReview"]["sha"], "old")
-
-    def test_other_modes_still_require_a_current_local_review(self):
-        for mode in ("codex", "superset", "vanilla"):
-            with self.subTest(mode=mode):
-                self.state["mode"] = {"name": mode}
-                with self.assertRaises(RunBlocked):
-                    assert_pre_review_current(self.state)
 
     def test_publishes_validation_for_pushed_head_and_tracks_staleness(self):
         github = Mock()

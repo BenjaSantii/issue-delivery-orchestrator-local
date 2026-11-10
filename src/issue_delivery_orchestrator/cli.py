@@ -50,7 +50,6 @@ from .stack import (
     stack_cut,
 )
 from .pr_quality import (
-    assert_pre_review_current,
     assert_validation_current,
     publish_validation,
     record_pre_review,
@@ -993,7 +992,6 @@ def ensure_pull_request(
             raise RunBlocked(state["blocker"]["reason"])
         require_parent_pr(state, github)
         assert_size_accepted(state)
-        assert_pre_review_current(state)
         pr = github.create(
             branch,
             title or f"{state['issue']['identifier']}: {state['issue']['title']}",

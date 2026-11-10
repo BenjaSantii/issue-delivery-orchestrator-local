@@ -1,6 +1,6 @@
 # Conductor Cloud
 
-LocalReviewer no es requerido en este modo. Omitir su ejecución y su recibo previo a la PR;
+LocalReviewer es opcional, como en todos los modos. Omitir su ejecución y su recibo previo a la PR;
 no solicitar login o tokens de Claude/Codex para esa etapa. Declararlo NOT_RUN en la validación,
 sin inventar PASS. Mantener QA por web, paridad CI y convergencia de reviews de GitHub.
 
