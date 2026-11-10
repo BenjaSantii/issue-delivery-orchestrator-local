@@ -8,6 +8,7 @@ from unittest.mock import patch
 from issue_delivery_orchestrator.cli import (
     _mode_decision,
     _new_run_mode,
+    _new_run_reviewer,
     _path_mode_markers,
     _requested_worktree,
     parser,
@@ -456,6 +457,56 @@ class CliModeTests(unittest.TestCase):
             ),
             ("vanilla", "vanilla-fallback"),
         )
+
+    def test_headless_linux_superset_host_uses_playwright(self):
+        with patch("issue_delivery_orchestrator.cli.sys.platform", "linux"), patch.dict(
+            os.environ, {"DISPLAY": "", "WAYLAND_DISPLAY": ""}
+        ):
+            self.assertEqual(
+                _new_run_reviewer("superset", None),
+                ("playwright", "headless-host"),
+            )
+            self.assertEqual(
+                _new_run_reviewer("vanilla", None),
+                ("cua-driver", "mode-default"),
+            )
+
+    def test_superset_host_with_display_keeps_cua(self):
+        with patch("issue_delivery_orchestrator.cli.sys.platform", "linux"), patch.dict(
+            os.environ, {"DISPLAY": ":0"}
+        ):
+            self.assertEqual(
+                _new_run_reviewer("superset", None),
+                ("cua-driver", "mode-default"),
+            )
+        with patch("issue_delivery_orchestrator.cli.sys.platform", "darwin"), patch.dict(
+            os.environ, {"DISPLAY": "", "WAYLAND_DISPLAY": ""}
+        ):
+            self.assertEqual(
+                _new_run_reviewer("superset", None),
+                ("cua-driver", "mode-default"),
+            )
+
+    def test_explicit_reviewer_must_fit_the_mode(self):
+        self.assertEqual(
+            _new_run_reviewer("superset", "playwright"),
+            ("playwright", "explicit"),
+        )
+        with self.assertRaisesRegex(RunBlocked, "vanilla mode cannot use reviewer playwright"):
+            _new_run_reviewer("vanilla", "playwright")
+
+    def test_mode_decision_announces_detected_reviewer_source(self):
+        decision = _mode_decision(
+            {
+                "worktree": "/tmp/worktree",
+                "mode": {"name": "superset"},
+                "reviewer": {"method": "playwright", "source": "headless-host"},
+            },
+            "superset-environment",
+        )
+
+        self.assertEqual(decision["reviewer"], "playwright")
+        self.assertEqual(decision["reviewerSource"], "headless-host")
 
     def test_path_markers_do_not_match_substrings(self):
         self.assertEqual(

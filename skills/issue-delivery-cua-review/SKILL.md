@@ -19,7 +19,8 @@ ventanas personales.
 
 1. Exigir runtime ID, URLs, historias `UI`, resultados esperados, worktree y run ID.
 2. Confirmar mediante el estado del run que `developmentMode` sea `superset` o `vanilla` y
-   `reviewerMethod` sea `cua-driver`. Para estados legacy sin modo, aceptar sólo `cua-driver`; no
+   `reviewerMethod` sea `cua-driver`. Si un run `superset` tiene `reviewerMethod=playwright`
+   (host sin pantalla), no usar esta skill: corresponde `issue-delivery-playwright-review`. Para estados legacy sin modo, aceptar sólo `cua-driver`; no
    sustituir modo ni método silenciosamente.
 3. En host (por defecto), comprobar `cua-driver --version`, `cua-driver doctor` y
    `cua-driver permissions status`. En Docker indicado por el usuario, comprobar `docker info`,

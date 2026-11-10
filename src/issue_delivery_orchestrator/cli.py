@@ -84,6 +84,7 @@ from .runtime import (
 )
 from .state import (
     DEVELOPMENT_MODES,
+    MODE_REVIEWERS,
     PHASES,
     REVIEW_METHODS,
     block_run,
@@ -95,6 +96,7 @@ from .state import (
     review_method,
     resume_run,
     run_mode,
+    mode_allows_reviewer,
     run_root,
     save_state,
     select_review_method,
@@ -133,7 +135,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--reviewer",
         choices=REVIEW_METHODS,
-        help=argparse.SUPPRESS,
+        help="Override the UI reviewer of a new run when its mode allows it, "
+        "e.g. playwright for superset",
     )
     result.add_argument(
         "--worktree",
@@ -451,7 +454,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.action == "launch-browser":
         if review_method(state) == "playwright":
             raise RunBlocked(
-                "Dedicated Chrome is disabled in conductor mode; "
+                "Dedicated Chrome is disabled for the playwright reviewer; "
                 "verify the UI with issue-delivery-playwright-review"
             )
         if review_method(state) != "cua-driver":
@@ -741,12 +744,6 @@ def bootstrap(
             f"{previous['runId']}; resume it instead of using --new-run"
         )
 
-    if args.reviewer:
-        raise RunBlocked(
-            "New runs select their UI reviewer through --mode; "
-            "codex uses codex-browser; superset and vanilla use cua-driver; "
-            "conductor uses playwright"
-        )
     if not requested_worktree:
         mode_hint = (
             f"{args.mode} mode"
@@ -762,6 +759,7 @@ def bootstrap(
         requested_worktree,
         configuration,
     )
+    reviewer, reviewer_source = _new_run_reviewer(mode, args.reviewer)
 
     if args.stack_parent:
         args.base = args.stack_parent
@@ -810,6 +808,8 @@ def bootstrap(
             "github": github_login,
         },
         mode=mode,
+        reviewer=reviewer,
+        reviewer_source=reviewer_source,
         profile=configuration.public_dict(),
     )
     if args.stack_parent:
@@ -1236,6 +1236,29 @@ def _new_run_mode(
     return "vanilla", "vanilla-fallback"
 
 
+def _new_run_reviewer(mode: str, explicit: str | None) -> tuple[str, str]:
+    if explicit:
+        if not mode_allows_reviewer(mode, explicit):
+            raise RunBlocked(
+                f"{mode} mode cannot use reviewer {explicit}; codex uses codex-browser, "
+                "superset uses cua-driver or playwright, vanilla uses cua-driver and "
+                "conductor uses playwright"
+            )
+        return explicit, "explicit"
+    if mode == "superset" and _is_headless_host():
+        return "playwright", "headless-host"
+    return MODE_REVIEWERS[mode], "mode-default"
+
+
+def _is_headless_host() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    return not (
+        os.environ.get("DISPLAY", "").strip()
+        or os.environ.get("WAYLAND_DISPLAY", "").strip()
+    )
+
+
 def _configured_mode_matches(
     worktree: Path,
     configuration: Settings,
@@ -1322,12 +1345,16 @@ def _mode_decision(
     state: dict[str, Any],
     source: str,
 ) -> dict[str, str]:
-    return {
+    decision = {
         "mode": run_mode(state),
         "source": source,
         "reviewer": review_method(state),
         "worktree": str(Path(state["worktree"]).resolve()),
     }
+    reviewer_source = (state.get("reviewer") or {}).get("source")
+    if reviewer_source and reviewer_source != "mode-default":
+        decision["reviewerSource"] = reviewer_source
+    return decision
 
 
 def _next_action(state: dict[str, Any]) -> str:
@@ -1357,6 +1384,15 @@ def _next_action(state: dict[str, Any]) -> str:
         return (
             "Launch the run-owned dedicated browser and verify the UI with "
             "Cua Driver from this checkout."
+        )
+    if (
+        state.get("currentPhase") == "manual-revision"
+        and run_mode(state) == "superset"
+        and review_method(state) == "playwright"
+    ):
+        return (
+            "Verify the UI with issue-delivery-playwright-review from this headless "
+            "Superset host; use mobile-web-reviewer for phone stories."
         )
     if (
         state.get("currentPhase") == "manual-revision"

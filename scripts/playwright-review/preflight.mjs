@@ -43,7 +43,7 @@ try {
   fail(
     'chromium',
     error.message.split('\n')[0],
-    'In Conductor Cloud run: corepack pnpm exec playwright install chromium',
+    'Run: corepack pnpm exec playwright install chromium',
   );
   finish();
 }

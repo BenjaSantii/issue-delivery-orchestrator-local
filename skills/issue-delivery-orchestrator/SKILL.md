@@ -75,7 +75,10 @@ Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la má
    - `codex` adopta el worktree del chat, acepta su `detached HEAD`, lo conecta a la rama de Linear
      y usa `issue-delivery-browser-review`.
    - `superset` adopta el worktree ya conectado a la rama de Linear y usa `issue-delivery-cua-review`. También
-     acepta `SUPERSET_WORKSPACE_PATH`.
+     acepta `SUPERSET_WORKSPACE_PATH`. En un host Linux sin pantalla (sin `DISPLAY` ni
+     `WAYLAND_DISPLAY`), por ejemplo una VPS registrada como host de Superset, fija
+     `reviewerMethod=playwright` con `reviewerSource=headless-host` y usa
+     `issue-delivery-playwright-review`. `--reviewer playwright` fuerza lo mismo en otro host.
    - `vanilla` adopta el checkout/worktree indicado, permite partir desde `origin/<base>`,
      `detached HEAD` seguro o la rama de la issue, conecta la rama de Linear y usa
      `issue-delivery-cua-review`.
@@ -332,9 +335,12 @@ el reviewer web persistido y conserva los demás gates.
    `start` (`export JWT_SECRET=$(...)`), nunca como valores literales. Tras un reinicio de la VM,
    una reanudación o la pérdida del binding del runtime, ejecutar `runtime-restore` en vez de
    reconstruir el arranque a mano; si bloquea, corregir la receta con lo aprendido y repetir.
-3. Ramificar exclusivamente por `developmentMode`:
+3. Ramificar exclusivamente por `developmentMode` y `reviewerMethod`:
 
-   - `superset` o `vanilla`: invocar `issue-delivery-cua-review` desde el checkout adoptado.
+   - `superset` con `reviewerMethod=playwright`: seguir la rama `conductor` de abajo desde el
+     checkout adoptado. Las reglas exclusivas de Conductor Cloud (LocalReviewer omitido, QA sólo
+     por web, credenciales del proyecto de Conductor) no aplican.
+   - `superset` o `vanilla` con `reviewerMethod=cua-driver`: invocar `issue-delivery-cua-review` desde el checkout adoptado.
      Usar el escritorio local (host) por defecto y conservar `reviewerMethod=cua-driver`:
      ejecutar `launch-browser --url <url-local>` para abrir el navegador del run.
      Usar Docker sólo cuando el usuario lo indique, creando o reanudando sólo el sandbox del run

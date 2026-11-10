@@ -173,6 +173,39 @@ class StateTests(unittest.TestCase):
         self.assertEqual(run_mode(state), "conductor")
         self.assertEqual(review_method(state), "playwright")
 
+    def test_superset_mode_keeps_playwright_reviewer_for_headless_hosts(self):
+        state = create_state(
+            worktree=self.worktree,
+            run_id="run-headless",
+            issue={"id": "id", "identifier": "TS-1", "title": "Title"},
+            branch="benjamin/ts-1",
+            base="test",
+            created_from="origin/test",
+            adopted_head="abc",
+            identities={"linear": "user@example.com", "github": "example-user"},
+            mode="superset",
+            reviewer="playwright",
+            reviewer_source="headless-host",
+        )
+
+        self.assertEqual(run_mode(state), "superset")
+        self.assertEqual(review_method(state), "playwright")
+
+    def test_rejects_reviewer_outside_the_mode(self):
+        with self.assertRaisesRegex(OrchestrationError, "cannot use reviewer"):
+            create_state(
+                worktree=self.worktree,
+                run_id="run-invalid",
+                issue={"id": "id", "identifier": "TS-1", "title": "Title"},
+                branch="benjamin/ts-1",
+                base="test",
+                created_from="origin/test",
+                adopted_head="abc",
+                identities={"linear": "user@example.com", "github": "example-user"},
+                mode="vanilla",
+                reviewer="playwright",
+            )
+
     def test_conductor_mode_rejects_a_different_stored_reviewer(self):
         state = create_state(
             worktree=self.worktree,

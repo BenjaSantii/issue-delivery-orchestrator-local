@@ -59,7 +59,7 @@ def pr_body(
     method = {
         "codex-browser": "Browser integrado de Codex",
         "cua-driver": "Cua Driver",
-        "playwright": "Playwright (Chromium headless en Conductor Cloud)",
+        "playwright": "Playwright (Chromium headless)",
         "adb": "ADB en dispositivo Android",
     }[provider]
     assistance = list(headless_assistance or [])

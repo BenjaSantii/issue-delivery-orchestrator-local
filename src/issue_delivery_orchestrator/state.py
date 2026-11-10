@@ -26,7 +26,14 @@ MODE_REVIEWERS = {
     "vanilla": "cua-driver",
     "conductor": "playwright",
 }
+ALTERNATE_MODE_REVIEWERS = {
+    "superset": ("playwright",),
+}
 RESUMABLE_STATUSES = {"active", "blocked", "needs_user_decision", "completed_preserved"}
+
+
+def mode_allows_reviewer(mode: str, method: str) -> bool:
+    return method == MODE_REVIEWERS[mode] or method in ALTERNATE_MODE_REVIEWERS.get(mode, ())
 
 
 def now() -> str:
@@ -61,11 +68,15 @@ def create_state(
     discarded_status: Iterable[str] = (),
     identities: dict[str, str],
     mode: str = "superset",
+    reviewer: str | None = None,
+    reviewer_source: str = "mode-default",
     profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if mode not in DEVELOPMENT_MODES:
         raise OrchestrationError(f"Unsupported development mode: {mode}")
-    reviewer_method = MODE_REVIEWERS[mode]
+    reviewer_method = reviewer or MODE_REVIEWERS[mode]
+    if not mode_allows_reviewer(mode, reviewer_method):
+        raise OrchestrationError(f"Run mode {mode} cannot use reviewer {reviewer_method}")
     root = run_root(worktree, run_id)
     for child in (
         "agents",
@@ -109,6 +120,7 @@ def create_state(
         },
         "reviewer": {
             "method": reviewer_method,
+            "source": reviewer_source,
             "selectedAt": now(),
         },
         "blocker": None,
@@ -223,12 +235,13 @@ def review_method(state: dict[str, Any]) -> str:
     stored_method = str((state.get("reviewer") or {}).get("method") or "")
     if state.get("mode"):
         mode = run_mode(state)
-        expected_method = MODE_REVIEWERS[mode]
-        if stored_method and stored_method != expected_method:
+        if not stored_method:
+            return MODE_REVIEWERS[mode]
+        if not mode_allows_reviewer(mode, stored_method):
             raise OrchestrationError(
-                f"Run mode {mode} requires reviewer {expected_method}, got {stored_method}"
+                f"Run mode {mode} requires reviewer {MODE_REVIEWERS[mode]}, got {stored_method}"
             )
-        return expected_method
+        return stored_method
     method = stored_method or "cua-driver"
     if method not in REVIEW_METHODS:
         raise OrchestrationError(f"Run has unsupported reviewer method: {method}")

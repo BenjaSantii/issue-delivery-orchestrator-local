@@ -1,6 +1,6 @@
 ---
 name: issue-delivery-playwright-review
-description: "Verificar historias UI y reparaciones con Playwright (Chromium headless) dentro de la VM de Conductor Cloud, sobre un Local Runtime. Usar en runs de Issue Delivery Orchestrator en modo conductor; delegar historias de teléfono, teclado o gestos táctiles a mobile-web-reviewer y nunca editar código."
+description: "Verificar historias UI y reparaciones con Playwright (Chromium headless) dentro de la VM de Conductor Cloud o de un host de Superset sin pantalla, sobre un Local Runtime. Usar en runs de Issue Delivery Orchestrator con reviewerMethod=playwright (modo conductor, o superset en un host headless); delegar historias de teléfono, teclado o gestos táctiles a mobile-web-reviewer y nunca editar código."
 ---
 
 # Playwright Revision
@@ -24,8 +24,10 @@ escriben datos. No aprobar por toast/200 ni usar la conversación del implementa
 
 1. Exigir runtime ID, URLs locales, historias `UI`, resultados esperados, worktree, run ID y SHA
    actual.
-2. Confirmar mediante el estado del run que `developmentMode` sea `conductor` y `reviewerMethod`
-   sea `playwright`. No sustituir modo ni método.
+2. Confirmar mediante el estado del run que `reviewerMethod` sea `playwright` y que
+   `developmentMode` sea `conductor`, o `superset` en un host sin pantalla. No sustituir modo ni
+   método. Las reglas de Conductor de arriba (validación sólo web, conductor-validation.md) aplican
+   sólo en modo `conductor`.
 3. Ejecutar
    `node <plugin-root>/scripts/playwright-review/preflight.mjs --worktree <checkout> --url <url>`
    con cada URL del runtime. Si Chromium falta, aplicar el paso de navegador de

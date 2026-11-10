@@ -268,7 +268,7 @@ class EvidenceVerificationTests(unittest.TestCase):
     def test_pr_body_names_playwright_provider(self):
         body = _pr_body("<!-- marker -->", [], provider="playwright")
 
-        self.assertIn("Playwright (Chromium headless en Conductor Cloud)", body)
+        self.assertIn("Playwright (Chromium headless)", body)
         self.assertNotIn("Cua Driver", body)
 
     def test_pr_body_discloses_headless_upload_assistance(self):

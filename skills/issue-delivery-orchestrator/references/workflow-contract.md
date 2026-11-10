@@ -155,7 +155,11 @@ Las evidencias de GitHub permanecen restringidas por los permisos del repositori
   `reviewer.method=codex-browser`. Fijar el chat y no archivarlo ni hacer Handoff a Local antes del
   merge y cleanup; el estado ignorado del run permanece en ese worktree.
 - Modo `superset`: Superset crea primero el worktree en la rama de Linear; el CLI lo adopta mediante
-  `--worktree` o `SUPERSET_WORKSPACE_PATH` y fija `reviewer.method=cua-driver`.
+  `--worktree` o `SUPERSET_WORKSPACE_PATH` y fija `reviewer.method=cua-driver`. Si el host es Linux
+  sin `DISPLAY` ni `WAYLAND_DISPLAY`, fija `reviewer.method=playwright` con
+  `reviewer.source=headless-host`; `--reviewer playwright` lo fuerza en cualquier host. El anuncio
+  inicial agrega `modeDecision.reviewerSource` cuando el reviewer no es el del modo por defecto.
+  Las reglas exclusivas de Conductor Cloud siguen dependiendo del modo `conductor`.
 - Modo `vanilla`: el usuario o su herramienta crea/prepara el checkout o worktree y ejecuta su
   setup local antes del loop. El CLI lo adopta mediante `--worktree`, permite partir desde la rama
   base, un detached HEAD seguro o la rama de la issue, conecta la rama de Linear y fija
@@ -178,7 +182,8 @@ Las evidencias de GitHub permanecen restringidas por los permisos del repositori
   dependencias, `.local-runtime` y cualquier otro archivo ignorado. Registrar el snapshot previo en
   `discardedInitialStatus` y exigir un status limpio después. No ejecutar esta limpieza al reanudar.
 - Browser sólo opera dentro de un run modo Codex abierto en la app. Cua opera en modo Superset o
-  Vanilla. Playwright es el reviewer principal sólo en modo Conductor. En los demás modos, Playwright headless puede asistir exclusivamente una story con brecha demostrada de
+  Vanilla. Playwright es el reviewer principal en modo Conductor y en modo Superset sobre un host
+  sin pantalla. En los demás modos, Playwright headless puede asistir exclusivamente una story con brecha demostrada de
   `file-upload` o `hover`, sobre el mismo SHA/runtime y con recibo bajo el run; el provider continúa
   siendo el reviewer principal. No cambiar provider o modo silenciosamente. Leer
   [headless-assistance.md](headless-assistance.md) y mantener compatibilidad con
