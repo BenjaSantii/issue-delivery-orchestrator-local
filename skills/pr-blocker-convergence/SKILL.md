@@ -136,7 +136,7 @@ Registrar para cada blocker `superficie`, `herramienta`, `requerida: sí/no` y `
 - `BROWSER` o `CUA`: sólo si cambió o puede haber regresado comportamiento visual/interactivo que no cubre una evidencia menor.
 - `PLAYWRIGHT`: sólo ante una brecha demostrada de capacidad del reviewer UI permitido, como upload o hover; no como reviewer alternativo general.
 
-Durante PR y convergencia de blockers no se ejecuta QA ni revisión UI de forma automática: la evidencia de cada `FIX` son los tests focales y la paridad con CI. Si un `FIX` puede cambiar algo que un caso del QA Script o una historia UI observa, registrarlo en el ledger, nombrar esos casos y pedir al usuario que autorice una ronda; sólo con su autorización correr `qa-session ... --rerun <casos> --user-approved "<sus palabras>"`. Nunca repetir el QA completo por blockers salvo que el usuario lo pida. Si no necesita herramientas especiales, escribir `ninguna` explícitamente.
+Durante PR y convergencia de blockers no se ejecuta QA ni revisión UI de forma automática: la evidencia de cada `FIX` son los tests focales y la paridad con CI en modo `focal`. Si un `FIX` puede cambiar algo que un caso del QA Script o una historia UI observa, registrarlo en el ledger, nombrar esos casos y pedir al usuario que autorice una ronda; sólo con su autorización correr `qa-session ... --rerun <casos> --user-approved "<sus palabras>"`. Nunca repetir el QA completo por blockers salvo que el usuario lo pida. Si no necesita herramientas especiales, escribir `ninguna` explícitamente.
 
 ## Loop de hasta cuatro rondas
 

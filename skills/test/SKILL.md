@@ -42,21 +42,31 @@ de tests; informar el recorte al implementador sin modificar archivos desde esta
 3. Preferir, en este orden:
    - tests existentes directamente relacionados con el comportamiento cambiado;
    - el archivo o conjunto focal más pequeño que pueda falsar el riesgo;
-   - typecheck de los proyectos afectados cuando cambió código tipado;
-   - la suite de un proyecto sólo si no existe una invocación focal fiable.
-4. Ejecutar suites completas de una app, E2E, lint o validación de todo el repo
-   únicamente cuando el usuario lo pida explícitamente, el ticket lo declare o el
-   repositorio no ofrezca un seam menor suficiente.
+   - typecheck de los proyectos afectados cuando cambió código tipado.
+   Si no hay un spec obvio, usar los tests relacionados con los archivos cambiados (en Jest,
+   `--findRelatedTests <archivos>`), no la suite del proyecto.
+4. No ejecutar la suite completa de un proyecto, E2E ni validación de todo el repo fuera de la
+   paridad completa previa a la PR, salvo que el usuario lo pida explícitamente.
+5. Ejecutar una sola tarea pesada a la vez: nunca Jest en paralelo con typecheck, lint u otro
+   Jest, y Jest con `--runInBand`. En paralelo el sistema mata los procesos por memoria y cada
+   reintento cuesta otra corrida.
 
 En TurboShop, ejecutar `pnpm` desde la raíz. No asumir que `nx test <app>` es el
 default: primero buscar la forma focal ya usada por el proyecto.
 
 ## Paridad con CI
 
-Cuando la skill llamadora pida paridad con CI (por ejemplo, el orquestador antes de pushear),
-leer [ci-parity.md](references/ci-parity.md) y reproducir los jobs de validación de la branch
-target sobre el delta completo, incluido lint. Este modo no reemplaza la selección focal de
-arriba durante la implementación; se ejecuta una vez por push.
+Cuando la skill llamadora pida paridad con CI, leer [ci-parity.md](references/ci-parity.md). Tiene
+dos modos:
+
+- `completa`: una sola vez por PR, justo antes del push que la abre. Reproduce los jobs de
+  validación de la branch target sobre el delta completo, con las suites de tests de los
+  proyectos afectados.
+- `focal`: cualquier push posterior, como las rondas de convergencia. Lint y typecheck de los
+  proyectos afectados, y sólo los tests relacionados con lo que cambió desde el último push
+  validado. Las suites completas quedan para la CI de la PR.
+
+Si la skill llamadora no dice el modo, usar `focal`.
 
 ## Fallas
 

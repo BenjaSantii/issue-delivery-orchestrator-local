@@ -6,8 +6,9 @@ bloquearon sólo por "validación no acreditada". Esta referencia adelanta ambos
 
 ## 1. Paridad con CI
 
-Invocar `test` pidiendo paridad con CI contra `origin/<prTarget>` del estado (la rama del padre en
-un stack) sobre el delta completo.
+Antes del push que abre la PR, invocar `test` pidiendo paridad con CI `completa` contra
+`origin/<prTarget>` del estado (la rama del padre en un stack) sobre el delta completo. En cada push
+de convergencia pedir el modo `focal`, sobre lo que cambió desde el último push validado.
 Consumir su recibo; reparar cada `branch-caused` con `issue-delivery-implement` y repetir. Un
 `base-failure` o `environment` se declara en el bloque de validación, no se oculta.
 

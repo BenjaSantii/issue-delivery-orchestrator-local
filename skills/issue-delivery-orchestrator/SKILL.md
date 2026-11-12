@@ -435,8 +435,9 @@ no autoriza su ejecución. No abrir la PR para "ver qué dice el bot".
 1. **Paridad con CI.** Antes de invocar `test`, revisar el delta de tests según
    [retained-tests.md](../test/references/retained-tests.md); delegar el recorte de duplicados
    nuevos a Implement y conservar los casos del QA Script. No usar el Refactor de producto
-   para ampliar o reducir cobertura. Invocar `test` en modo paridad con CI sobre el delta completo
-   del candidato final contra `origin/<prTarget>`. Reparar todo `branch-caused` con
+   para ampliar o reducir cobertura. Invocar `test` en modo paridad con CI `completa` sobre el
+   delta completo del candidato final contra `origin/<prTarget>`. Es la única corrida de suites
+   completas del run; los tickets, el refactor y la convergencia usan tests focales. Reparar todo `branch-caused` con
    `issue-delivery-implement` antes de seguir. Nunca pushear una branch que ya se sabe roja en
    lint, typecheck, tests o chequeos de
    contrato/migraciones.
@@ -507,12 +508,12 @@ y sólo la sección `BLOCKERS` de los `blockerBots` (x100 en TurboShop); ignorar
 opcionales y comentarios humanos durante el ciclo automático.
 
 1. Entregar el snapshot completo a `pr-blocker-convergence`; esa skill agrega nuevos blockers, deduplica por causa raíz y decide `FIX`, `SKIP`, `NEEDS_USER_DECISION` o `STOP`.
-2. Sin QA por blockers: Durante PR y convergencia de blockers no se ejecuta QA ni revisión UI de forma automática: la evidencia de cada `FIX` son los tests focales y la paridad con CI. Si un `FIX` puede cambiar algo que un caso del QA Script o una historia UI observa, registrarlo en el ledger, nombrar esos casos y pedir al usuario que autorice una ronda; sólo con su autorización correr `qa-session ... --rerun <casos> --user-approved "<sus palabras>"`. Nunca repetir el QA completo por blockers salvo que el usuario lo pida.
+2. Sin QA por blockers: Durante PR y convergencia de blockers no se ejecuta QA ni revisión UI de forma automática: la evidencia de cada `FIX` son los tests focales y la paridad con CI en modo `focal`. Si un `FIX` puede cambiar algo que un caso del QA Script o una historia UI observa, registrarlo en el ledger, nombrar esos casos y pedir al usuario que autorice una ronda; sólo con su autorización correr `qa-session ... --rerun <casos> --user-approved "<sus palabras>"`. Nunca repetir el QA completo por blockers salvo que el usuario lo pida.
    `publish-run` ya no exige un QA nuevo tras estos pushes, y el bloque de validación de la PR indica en
    qué commit se verificó el QA.
    Reparar automáticamente cada `FIX/MODEL` con un worker nuevo: guardar el blocker en el run y
    ejecutar `implement-package --finding <ruta>` (con `--ticket` sólo si pertenece a uno). Agrupar
-   en un mismo worker los `FIX` de una misma causa raíz. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI sobre el delta completo y hacer un único push por ronda. Inmediatamente después del push, regenerar `validation/pr-validation.md` y ejecutar `publish-run` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
+   en un mismo worker los `FIX` de una misma causa raíz. Usar un commit por causa raíz, validar con las herramientas declaradas, repetir la paridad con CI en modo `focal` sobre lo que cambió en la ronda y hacer un único push por ronda. Inmediatamente después del push, regenerar `validation/pr-validation.md` y ejecutar `publish-run` antes de `wait-review`, para que cada corrida del reviewer vea la validación del SHA que revisa.
 3. Si una solicitud exige negocio, arquitectura incompatible o cambiar un acuerdo vigente, registrar `NEEDS_USER_DECISION`, completar primero trabajo independiente seguro y pausar.
 4. Si una cadena acumula dos iteraciones de reparación fallidas, registrar `STOP`, no intentar otro parche y avisar al usuario con la línea temporal y alternativas.
 5. Si el usuario mantiene el spec, guardar `SKIP/PRIOR_DECISION`. Si acepta al reviewer, reconciliar primero spec y tickets en Linear y recién después editar.
