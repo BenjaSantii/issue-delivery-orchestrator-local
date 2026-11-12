@@ -29,31 +29,39 @@ directorio ignorado por git: el prototipo nunca entra en la PR.
 
 ## Cómo se ve
 
-Sigue el estilo de las páginas de Superset: un documento propio, sobrio y legible, que no parezca
-generado.
+Sigue el estilo de las páginas de Superset: la pantalla dentro de su marco, nunca a pantalla
+completa, y al lado un panel con lo que cambia.
 
+**Parte siempre de [template.html](references/template.html).** Cópiala al directorio del
+prototipo y rellena las pantallas y las notas; no cambies su estructura ni su estilo.
+
+- **Plataformas.** Cada pantalla es una `.view` con `data-platform` (`movil` o `web`) y
+  `data-state` (`antes`, `despues` o un estado del spec, como `vacio` o `error`). Deja sólo las
+  plataformas que la issue toca. Con las dos, arriba aparece el selector **Teléfono / Web**.
+  - Teléfono: marco de celular de 390×844 con las notas a la derecha.
+  - Web: marco de navegador grande con las notas al lado; en ventanas angostas pasan abajo.
+- **Estados.** Siempre **Antes** y **Después**, que se cambian con botones. Agrega los estados que
+  el spec nombra (vacío, error, cargando, permiso denegado) cuando importan.
+- **Notas.** En **Antes**, una línea con lo que ve hoy el usuario y dónde está el problema. En
+  **Después**, la lista "Qué cambia": cada cambio lleva `data-mark="<n>"` en la pantalla y su nota
+  con el mismo número, en una frase.
+- **Copia la pantalla del código actual, no la inventes.** El HTML no puede usar los componentes
+  reales, así que los redibujas desde el código:
+  - **Antes:** lee el componente que la issue cambia y sus hijos, y reproduce su estructura, orden,
+    textos, íconos, colores, tipografía y espaciados. Saca los valores del tema de la app (tokens,
+    `theme`, Tailwind config), no a ojo.
+  - **Después:** parte de esa misma pantalla y cambia sólo lo que dice el spec.
+  - Si algo de la pantalla real no lo encuentras en el código, dibújalo lo más neutro posible y
+    anótalo como supuesto en las notas. Nunca agregues elementos que la app no tiene.
+- **Datos falsos creíbles.** Copy en español del producto y datos realistas (talleres, rutas,
+  vendedores con nombres chilenos), nunca "Lorem ipsum".
 - **Autocontenido.** Todo el CSS y el JS van dentro del archivo. Nada de `<script src>` ni hojas
   de estilo remotas, ni `fetch`, ni `eval`. Las imágenes van como SVG en línea o `data:`. Tiene
   que abrir igual con la red apagada.
-- **Estructura.** Arriba, el código de la issue, el título y una línea que dice qué cambia. Debajo,
-  pestañas por estado: siempre **Antes** y **Después**, y además los estados que el spec nombra
-  (vacío, error, cargando, permiso denegado) cuando importan. Al lado o debajo de cada pantalla,
-  una lista corta "Qué cambia" que apunta a lo nuevo.
-- **Pantallas creíbles.** Para apps de teléfono, dibuja la pantalla dentro de un marco de
-  390×844; para web, dentro de un marco de navegador al ancho real. Usa el copy en español del
-  producto y datos falsos realistas (talleres, rutas, vendedores con nombres chilenos), nunca
-  "Lorem ipsum".
-- **Fiel a la app.** Antes de dibujar, lee los colores, la tipografía y los componentes de la app
-  que cambia (su tema, tokens o Tailwind config) y úsalos. "Antes" debe parecerse a la pantalla real
-  de hoy; si no la conoces bien, revisa el componente actual.
-- **Diseño deliberado.** Una paleta, una escala tipográfica con contraste real entre título y
-  texto, espacio en blanco para agrupar en vez de bordes en todo. Evita degradados morado-azul,
-  todo centrado, esquinas de píldora en cada elemento y emojis como íconos.
-- **Interacción mínima.** Lo justo para entender el flujo: cambiar de pestaña, abrir un modal,
-  marcar un ítem. Sin lógica de negocio.
-- **Cada estado tiene su ancla.** `#antes`, `#despues` y `#<estado>` abren esa pestaña directo.
-  Lo usas para las capturas.
-- Define tus colores como variables en `:root` y dale a `body` un fondo explícito.
+- **Interacción mínima.** Lo justo para entender el flujo: abrir un modal, marcar un ítem. Sin
+  lógica de negocio.
+- **Anclas para capturar.** `#<plataforma>-<estado>` abre esa vista directo, por ejemplo
+  `#movil-despues` o `#web-antes`.
 
 ## Mostrarlo
 
@@ -78,24 +86,24 @@ El usuario aprueba mandando por el chat capturas de las pantallas que acepta, o 
 guarda en disco las imágenes que te manda, así que no las subas: úsalas para saber qué pantallas
 aprobó.
 
-1. Captura tú esas mismas pantallas desde el servidor del prototipo, una PNG por estado aprobado,
-   en el directorio del prototipo (`antes.png`, `despues.png`, `<estado>.png`). Con el Playwright
-   del repo:
+1. Captura tú esas mismas pantallas desde el servidor del prototipo, una PNG por vista aprobada,
+   en el directorio del prototipo (`movil-antes.png`, `movil-despues.png`, `web-despues.png`...).
+   Con el Playwright del repo:
 
    ```bash
    node -e '
    const { chromium } = require("playwright");
    (async () => {
-     const [url, dir, ...states] = process.argv.slice(1);
+     const [url, dir, ...views] = process.argv.slice(1);
      const browser = await chromium.launch();
-     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-     for (const state of states) {
-       await page.goto(`${url}#${state}`);
+     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+     for (const view of views) {
+       await page.goto(`${url}#${view}`);
        await page.waitForTimeout(300);
-       await page.screenshot({ path: `${dir}/${state}.png`, fullPage: true });
+       await page.screenshot({ path: `${dir}/${view}.png`, fullPage: true });
      }
      await browser.close();
-   })();' "<proxyUrl de prototype-serve>" "<directorio del prototipo>" antes despues
+   })();' "<proxyUrl de prototype-serve>" "<directorio del prototipo>" movil-antes movil-despues
    ```
 
    Usa `proxyUrl` y no `url`: Playwright corre en el host del daemon.

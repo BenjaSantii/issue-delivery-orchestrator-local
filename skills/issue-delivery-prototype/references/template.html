@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LOG-000 · Título corto del cambio</title>
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --surface: #ffffff;
+    --text: #1c1b19;
+    --muted: #6b6860;
+    --border: #dedbd2;
+    --accent: #1f5f4a;
+    --accent-soft: #e3efe9;
+    --note: #c2410c;
+    --chrome: #e9e7e1;
+    --font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
+  .page { max-width: 1440px; margin: 0 auto; padding: 32px 32px 48px; }
+  .issue { font: 12px var(--mono); color: var(--muted); letter-spacing: .04em; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 4px 0 6px; letter-spacing: -.01em; }
+  .summary { color: var(--muted); max-width: 70ch; margin: 0 0 24px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; margin-bottom: 20px; }
+  .group { display: flex; gap: 2px; background: var(--chrome); padding: 3px; border-radius: 8px; }
+  .group button { border: 0; background: transparent; font: 500 14px var(--font); color: var(--muted);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  .group button[aria-pressed="true"] { background: var(--surface); color: var(--text);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .group[hidden] { display: none; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, auto) minmax(260px, 340px);
+    gap: 40px; align-items: start; justify-content: start; }
+  .stage[data-platform="web"] { grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); }
+  @media (max-width: 960px) { .stage, .stage[data-platform="web"] { grid-template-columns: 1fr; } }
+
+  .phone { width: 390px; max-width: 100%; height: 844px; border: 12px solid #1b1b1d; border-radius: 52px;
+    background: var(--surface); overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 24px 48px -24px rgb(0 0 0 / .35); }
+  .phone .statusbar { flex: none; height: 44px; display: flex; justify-content: space-between;
+    align-items: center; padding: 0 24px; font: 600 13px var(--font); }
+  .browser { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+    overflow: hidden; box-shadow: 0 24px 48px -28px rgb(0 0 0 / .3); }
+  .browser .bar { height: 40px; background: var(--chrome); display: flex; align-items: center; gap: 8px;
+    padding: 0 14px; border-bottom: 1px solid var(--border); }
+  .browser .bar i { width: 11px; height: 11px; border-radius: 50%; background: #c9c6bd; }
+  .browser .url { margin-left: 12px; flex: 1; max-width: 520px; background: var(--surface); border-radius: 6px;
+    font: 12px var(--mono); color: var(--muted); padding: 4px 10px; }
+  .screen { flex: 1; overflow: auto; position: relative; }
+  .browser .screen { height: 720px; }
+
+  .notes h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 4px 0 12px; }
+  .notes ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; counter-reset: n; }
+  .notes li { counter-increment: n; display: grid; grid-template-columns: 24px 1fr; gap: 10px; }
+  .notes li::before { content: counter(n); width: 22px; height: 22px; border-radius: 50%; background: var(--note);
+    color: #fff; font: 600 12px/22px var(--font); text-align: center; }
+  .notes p { margin: 0; }
+  .notes .state-note { color: var(--muted); margin: 0 0 16px; }
+
+  [data-mark]::after { content: attr(data-mark); position: absolute; top: -9px; right: -9px; width: 20px; height: 20px;
+    border-radius: 50%; background: var(--note); color: #fff; font: 600 11px/20px var(--font); text-align: center; }
+  [data-mark] { position: relative; outline: 2px solid var(--note); outline-offset: 2px; border-radius: 6px; }
+
+  .view[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main class="page">
+  <div class="issue">LOG-000 · App que cambia</div>
+  <h1>Título corto del cambio</h1>
+  <p class="summary">Una o dos líneas: qué problema tiene hoy el usuario y qué verá después.</p>
+
+  <div class="controls">
+    <div class="group" id="platforms" role="group" aria-label="Plataforma"></div>
+    <div class="group" id="states" role="group" aria-label="Estado"></div>
+  </div>
+
+  <!--
+    One .view per platform and state. data-platform is "movil" or "web"; data-state is "antes",
+    "despues" or the spec's state names ("vacio", "error"...). Delete the platform you do not need.
+    Number what changed on the screen with data-mark="1", "2"... and explain each number in the notes.
+  -->
+
+  <section class="view" data-platform="movil" data-state="antes" data-label="Antes">
+    <div class="stage">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+        <div class="screen">
+          <!-- The screen as it looks today, with the app's real look. -->
+        </div>
+      </div>
+      <aside class="notes">
+        <h2>Hoy</h2>
+        <p class="state-note">Lo que ve el usuario hoy y dónde está el problema.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view" data-platform="movil" data-state="despues" data-label="Después">
+    <div class="stage">
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+        <div class="screen">
+          <!-- The new screen. Mark each change, for example <button data-mark="1">Ver taller</button>. -->
+        </div>
+      </div>
+      <aside class="notes">
+        <h2>Qué cambia</h2>
+        <ol>
+          <li><p>Primer cambio, en una frase.</p></li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view" data-platform="web" data-state="antes" data-label="Antes">
+    <div class="stage" data-platform="web">
+      <div class="browser">
+        <div class="bar"><i></i><i></i><i></i><span class="url">app.turboshop.cl/ruta</span></div>
+        <div class="screen">
+          <!-- The web screen as it looks today. -->
+        </div>
+      </div>
+      <aside class="notes">
+        <h2>Hoy</h2>
+        <p class="state-note">Lo que ve el usuario hoy y dónde está el problema.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view" data-platform="web" data-state="despues" data-label="Después">
+    <div class="stage" data-platform="web">
+      <div class="browser">
+        <div class="bar"><i></i><i></i><i></i><span class="url">app.turboshop.cl/ruta</span></div>
+        <div class="screen">
+          <!-- The new web screen, with data-mark on each change. -->
+        </div>
+      </div>
+      <aside class="notes">
+        <h2>Qué cambia</h2>
+        <ol>
+          <li><p>Primer cambio, en una frase.</p></li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<script>
+  const views = [...document.querySelectorAll(".view")];
+  const platforms = [...new Set(views.map((v) => v.dataset.platform))];
+  const names = { movil: "Teléfono", web: "Web" };
+  let platform = platforms[0];
+  let state = "antes";
+
+  function statesOf(p) {
+    return views.filter((v) => v.dataset.platform === p).map((v) => [v.dataset.state, v.dataset.label]);
+  }
+
+  function buttons(container, items, current, pick) {
+    container.replaceChildren(...items.map(([value, label]) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.setAttribute("aria-pressed", String(value === current));
+      b.onclick = () => pick(value);
+      return b;
+    }));
+  }
+
+  function render() {
+    const available = statesOf(platform);
+    if (!available.some(([s]) => s === state)) state = available[0][0];
+    views.forEach((v) => { v.hidden = !(v.dataset.platform === platform && v.dataset.state === state); });
+    const group = document.getElementById("platforms");
+    group.hidden = platforms.length < 2;
+    buttons(group, platforms.map((p) => [p, names[p] || p]), platform, (p) => go(p, state));
+    buttons(document.getElementById("states"), available, state, (s) => go(platform, s));
+  }
+
+  function go(p, s) { history.replaceState(null, "", `#${p}-${s}`); platform = p; state = s; render(); }
+
+  function fromHash() {
+    const [p, ...rest] = location.hash.slice(1).split("-");
+    if (platforms.includes(p)) { platform = p; if (rest.length) state = rest.join("-"); }
+    render();
+  }
+
+  window.addEventListener("hashchange", fromHash);
+  fromHash();
+</script>
+</body>
+</html>
