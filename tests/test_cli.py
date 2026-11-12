@@ -362,6 +362,15 @@ class CliModeTests(unittest.TestCase):
                 ("t3", "t3-environment"),
             )
 
+    def test_detects_paseo_from_its_agent_environment(self):
+        configuration = self._settings()
+        with patch.dict(os.environ, {"PASEO_AGENT_ID": "agent-1", "T3CODE_THREAD_ID": "",
+                                     "SUPERSET_WORKSPACE_PATH": ""}):
+            self.assertEqual(
+                _new_run_mode(None, Path("/tmp/.paseo/worktrees/TS-1"), configuration),
+                ("paseo", "paseo-environment"),
+            )
+
     def test_detects_superset_from_path_marker_without_environment(self):
         configuration = self._settings()
 

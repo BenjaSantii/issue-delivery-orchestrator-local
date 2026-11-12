@@ -106,6 +106,30 @@ class GitWorkspace:
             allowed_start_branches=None,
         )
 
+    def adopt_paseo(
+        self,
+        path: Path,
+        expected_branch: str,
+        base: str,
+        issue: str,
+    ) -> Worktree:
+        candidate = self._validated_worktree(path)
+        common = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=candidate).stdout.strip()
+        own = run(["git", "rev-parse", "--path-format=absolute", "--git-dir"], cwd=candidate).stdout.strip()
+        if Path(common).resolve() == Path(own).resolve():
+            raise RunBlocked("Paseo runs need a worktree workspace, not the main checkout; create the "
+                             "workspace with a worktree on the Linear branch")
+        # A worktree created in the Paseo app may start on its own branch; any start branch is
+        # accepted while its history is contained in the base.
+        return self._adopt_switchable(
+            candidate,
+            expected_branch,
+            base,
+            issue,
+            mode="paseo",
+            allowed_start_branches=None,
+        )
+
     def adopt_conductor(
         self,
         path: Path,

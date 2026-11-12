@@ -393,6 +393,33 @@ The agent opens the QA thread with its `t3_thread_launch` tool (`existing_worktr
 `qa-session --launched <threadId>`. The engine checks the thread's worktree, title, provider and
 model before it registers it. `qa-wait` and `qa-resume` use `t3 thread show` and `t3 thread send`.
 
+## Paseo
+
+From your machine, one command starts an issue as a Paseo agent in a new worktree on a Paseo host:
+
+```bash
+export ISSUE_DELIVERY_PASEO_HOST=ssh://root@<vps>
+export ISSUE_DELIVERY_PASEO_REPO=/home/dev/TurboShop
+python3 scripts/issue-delivery LOG-123 --base test paseo-launch            # plan only
+python3 scripts/issue-delivery LOG-123 --base test paseo-launch --confirm  # create the agent
+```
+
+It blocks when the issue is closed, blocked by an open issue that is not its stack parent, or its
+branch already exists on origin. Otherwise it runs `paseo run --new-workspace worktree` from
+`origin/<base>` on the Linear branch. Without approved spec and tickets the agent starts at the
+Grill; with them it goes straight to delivery. `--provider` (default `claude-dev4`), `--model`
+(default `opus`) and `--effort` pick the agent, also through `ISSUE_DELIVERY_PASEO_PROVIDER`,
+`ISSUE_DELIVERY_PASEO_MODEL` and `ISSUE_DELIVERY_PASEO_EFFORT`. A new worktree has no `.env` files
+or `node_modules`; `--setup` (or `ISSUE_DELIVERY_PASEO_SETUP`) names the command the agent runs
+first to prepare it, such as the host's Superset setup script. All of these can live in the
+orchestrator `.env`.
+
+Inside a Paseo agent (`PASEO_AGENT_ID` is set) the orchestrator picks `paseo` mode. It refuses the
+main checkout, so open the agent in a worktree workspace. `qa-session` creates the QA as another
+Paseo agent in the same workspace and worktree, on `claude-dev4` unless `--agent` says otherwise;
+`qa-wait` and `qa-resume` use `paseo wait`, `paseo inspect`, `paseo logs` and `paseo send`. On a
+Linux host without a display the reviewer is `playwright`.
+
 ## Conductor Cloud
 
 Issues whose spec and tickets are already approved can run end to end in a Conductor Cloud

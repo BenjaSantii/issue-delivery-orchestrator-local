@@ -48,7 +48,8 @@ def configure(actions: Any) -> None:
                             help="Create a fresh QA chat in the same Conductor or Superset workspace")
     qa.add_argument("--workspace",
                     help="Conductor workspace ID; in Superset it defaults to SUPERSET_WORKSPACE_ID and "
-                         "in T3 to the calling thread (T3CODE_THREAD_ID)")
+                         "in T3 to the calling thread (T3CODE_THREAD_ID), in Paseo to the calling agent "
+                         "(PASEO_AGENT_ID)")
     qa.add_argument("--implementation-session",
                     help="Calling chat; in Superset it defaults to the only live terminal")
     qa.add_argument("--url", action="append", required=True)
@@ -128,7 +129,7 @@ def wait_for_qa(state: dict[str, Any], timeout_minutes: int) -> dict[str, Any]:
     review = (state.get("qaSession") or {}).get("reviewSessionId")
     if not review:
         raise RunBlocked("No QA conversation is registered; run qa-session first")
-    if run_mode(state) in ("superset", "t3"):
+    if run_mode(state) in ("superset", "t3", "paseo"):
         host = fresh_qa.qa_host(run_mode(state), (state.get("qaSession") or {}).get("workspaceId"))
         status = host.wait(review, timeout_minutes * 60, IDLE_POLL_SECONDS)
         return {"reviewSessionId": review, "status": status, **fresh_qa.outcome(state, host)}
@@ -190,7 +191,7 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
         return fresh_qa.rebase(state, old_base=args.old_base, rerun=args.rerun)
     if args.action == "qa-wait":
         return wait_for_qa(state, args.timeout_minutes)
-    if run_mode(state) in ("conductor", "superset", "t3"):
+    if run_mode(state) in ("conductor", "superset", "t3", "paseo"):
         raise RunBlocked("Use qa-session to create and verify the actual QA chat")
     receipt = _artifact(state, args.receipt)
     if not isinstance(receipt, dict) or receipt.get("freshContext") is not True or (

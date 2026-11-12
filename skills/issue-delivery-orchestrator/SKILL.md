@@ -19,13 +19,16 @@ Cuando se nombre otra skill incluida, invocarla con la sintaxis nativa del host:
 Codex o `/issue-delivery-orchestrator-local:<skill>` en Claude Code. Resolver `<plugin-root>` como
 el directorio instalado del plugin; en Claude Code corresponde a `${CLAUDE_PLUGIN_ROOT}`. Claude
 Code nunca selecciona modo `codex`: usar `conductor` dentro de Conductor Cloud, `superset` cuando
-exista su señal válida, `t3` dentro de un thread de T3 Code y `vanilla` en cualquier otro checkout
+exista su señal válida, `t3` dentro de un thread de T3 Code, `paseo` dentro de un agente de Paseo y
+`vanilla` en cualquier otro checkout
 preparado.
 
 Para iniciar issues con spec y tickets aprobados en Conductor Cloud desde la máquina local, usar
 `issue-delivery-cloud-launch`. Para iniciarlas en un host remoto de Superset, como una VPS, usar
 `issue-delivery-superset-launch`. Para iniciarlas en T3 Code, con o sin Grill previo, usar
 `issue-delivery <issue> --base <base> t3-launch [--confirm]` en la máquina del servidor de T3.
+Para iniciarlas como agente de Paseo, con o sin Grill previo, usar
+`issue-delivery <issue> --base <base> paseo-launch [--confirm]` desde la máquina local.
 Dentro del workspace cloud, leer
 [conductor-cloud.md](references/conductor-cloud.md) antes de iniciar el run.
 
@@ -50,6 +53,8 @@ Dentro del workspace cloud, leer
      checkout tenga una señal válida de Superset o de Conductor Cloud.
    - `t3`: thread de T3 Code (`T3CODE_THREAD_ID`) en un worktree nuevo, creado con `t3-launch` o
      desde la app. Desde la app el worktree nace en una rama `t3/...` de T3.
+   - `paseo`: agente de Paseo (`PASEO_AGENT_ID`) en un workspace con worktree, creado con
+     `paseo-launch` o desde la app.
    - `conductor`: workspace de Conductor Cloud (`CONDUCTOR_IS_LOCAL=0`), normalmente creado con
      `issue-delivery-cloud-launch`. Preparar la VM según
      [conductor-cloud.md](references/conductor-cloud.md) y seleccionar `--mode conductor`.
@@ -60,12 +65,12 @@ Dentro del workspace cloud, leer
    delegar otro worktree mediante `create_thread`, subagentes, `git worktree add` o cualquier
    mecanismo equivalente. Si el worktree actual no es adoptable, bloquear en la misma sesión y
    pedir al usuario que abra manualmente otro con su setup local.
-4. Ejecutar, agregando `--mode <codex|superset|vanilla|conductor|t3>` sólo cuando el usuario indique
+4. Ejecutar, agregando `--mode <codex|superset|vanilla|conductor|t3|paseo>` sólo cuando el usuario indique
    uno o el checkout sea de Conductor Cloud:
 
    ```bash
    python3 <plugin-root>/scripts/issue-delivery <issue> --worktree <ruta> \
-     [--mode <codex|superset|vanilla|conductor|t3>] \
+     [--mode <codex|superset|vanilla|conductor|t3|paseo>] \
      [--base <branch>] [--stack-parent <rama-del-slice-padre>] [--new-run]
    ```
 
@@ -90,6 +95,10 @@ Dentro del workspace cloud, leer
      usa `issue-delivery-cua-review` y en un host Linux sin pantalla fija `reviewerMethod=playwright`
      con `reviewerSource=headless-host`. El QA abre su propio thread; ver
      [fresh-qa.md](references/fresh-qa.md#en-t3).
+   - `paseo` adopta el worktree del agente y bloquea en el checkout principal. Acepta cualquier rama
+     inicial sin commits fuera de la base y la cambia a la rama de Linear. Igual que `superset`, en un
+     host Linux sin pantalla fija `reviewerMethod=playwright`. El QA corre en otro agente de Paseo;
+     ver [fresh-qa.md](references/fresh-qa.md#en-paseo).
    - `vanilla` adopta el checkout/worktree indicado, permite partir desde `origin/<base>`,
      `detached HEAD` seguro o la rama de la issue, conecta la rama de Linear y usa
      `issue-delivery-cua-review`.

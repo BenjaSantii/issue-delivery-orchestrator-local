@@ -40,11 +40,24 @@ def branch_in_use(repository: Path, branch: str) -> str | None:
     return None
 
 
+QA_STEPS = {
+    "t3": ("thread de T3",
+           "El QA corre en otro thread de T3: `qa-session` responde `needs_agent_launch`; ábrelo con "
+           "`t3_thread_launch` tal como dice el pedido y regístralo con `qa-session --launched "
+           "<threadId>`."),
+    "paseo": ("agente de Paseo",
+              "El QA corre en otro agente de Paseo del mismo workspace: créalo con `qa-session`, que "
+              "usa el provider `claude-dev4` salvo que pases `--agent`."),
+}
+
+
 def t3_launch_message(readiness: dict[str, Any], *, grill: bool, base: str,
                       stack_parent: str | None, implement_model: str | None = None,
-                      qa: dict[str, str] | None = None) -> str:
+                      qa: dict[str, str] | None = None, host: str = "t3",
+                      setup: str | None = None) -> str:
     identifier = readiness["identifier"]
-    flags = "--mode t3 " + (f"--stack-parent {stack_parent}" if stack_parent else f"--base {base}")
+    where, qa_step = QA_STEPS[host]
+    flags = f"--mode {host} " + (f"--stack-parent {stack_parent}" if stack_parent else f"--base {base}")
     if implement_model:
         flags += f" --implement-model {implement_model}"
     if qa and qa.get("model"):
@@ -75,15 +88,15 @@ def t3_launch_message(readiness: dict[str, Any], *, grill: bool, base: str,
         )
     return (
         f"Entrega {identifier} ({readiness['title']}) con Issue Delivery Orchestrator en este "
-        f"thread de T3, sobre la rama {readiness['branch']}.\n\n"
+        f"{where}, sobre la rama {readiness['branch']}.\n\n"
         f"1. Si las skills del plugin `{PLUGIN_ID}` no aparecen en esta sesión, detente y dilo: "
-        "no las sustituyas leyendo archivos a mano.\n"
+        "no las sustituyas leyendo archivos a mano."
+        + (f" Antes de seguir, prepara este worktree con `{setup}` y detente si falla." if setup else "")
+        + "\n"
         f"{start}"
         "4. Usa el reviewer que decida el motor: en un host sin pantalla es "
         "`issue-delivery-playwright-review`, con `mobile-web-reviewer` para las historias de "
-        "teléfono. El QA corre en otro thread de T3: `qa-session` responde `needs_agent_launch`; "
-        "ábrelo con `t3_thread_launch` tal como dice el pedido y regístralo con `qa-session "
-        "--launched <threadId>`. Espéralo con `qa-wait` en segundo plano y, si se detiene, "
+        f"teléfono. {qa_step} Espéralo con `qa-wait` en segundo plano y, si se detiene, "
         "retómalo con `qa-resume` o `qa-session --replace`. No abras el QA de otra forma.\n"
         "5. Pausa sólo ante tickets HITL, decisiones de tamaño o bloqueos reales; explica la "
         "acción mínima que necesitas. LocalReviewer es opcional: no lo ejecutes ni pidas permiso "

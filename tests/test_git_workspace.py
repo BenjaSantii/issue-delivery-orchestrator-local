@@ -262,6 +262,21 @@ class GitWorkspaceTests(unittest.TestCase):
             with self.assertRaisesRegex(RunBlocked, "does not match Linear branch"):
                 workspace.adopt_t3(checkout, "benjamin/ts-24-t3-mode", "test", "TS-24")
 
+    def test_paseo_adopts_its_worktree_but_never_the_main_checkout(self):
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = self._conductor_checkout(Path(raw))
+            workspace = GitWorkspace(checkout)
+            workspace.fetch("test")
+            with self.assertRaisesRegex(RunBlocked, "not the main checkout"):
+                workspace.adopt_paseo(checkout, "benjamin/ts-25-paseo", "test", "TS-25")
+
+            linked = Path(raw) / "paseo-worktree"
+            git(checkout, "worktree", "add", "-b", "paseo/fresh", str(linked), "origin/test")
+            result = workspace.adopt_paseo(linked, "benjamin/ts-25-paseo", "test", "TS-25")
+
+            self.assertEqual(result.branch, "benjamin/ts-25-paseo")
+            self.assertEqual(git(linked, "branch", "--show-current"), "benjamin/ts-25-paseo")
+
     def test_inferred_vanilla_rejects_dirty_state_without_discarding(self):
         workspace = GitWorkspace(Path("/tmp/repository"))
         dirty = (" M tracked.txt", "?? scratch.txt")

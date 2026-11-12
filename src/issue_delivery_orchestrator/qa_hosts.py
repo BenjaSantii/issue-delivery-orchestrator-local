@@ -1,4 +1,4 @@
-"""Where a fresh QA conversation lives: a Superset workspace terminal or a T3 thread."""
+"""Where a fresh QA conversation lives: a Superset terminal, a T3 thread or a Paseo agent."""
 from __future__ import annotations
 
 import json
@@ -255,3 +255,114 @@ class T3QaHost:
             if time.monotonic() >= deadline:
                 raise RunBlocked("The QA agent is still working; run qa-wait again")
             time.sleep(poll_seconds)
+
+
+PASEO_QA_PROVIDER = "claude-dev4"
+PASEO_WORKING = ("initializing", "running")
+
+
+def paseo_cli() -> str:
+    for candidate in (shutil.which("paseo"), "/usr/bin/paseo", Path.home() / ".local/bin/paseo"):
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    raise RunBlocked("The paseo CLI is not installed on this host")
+
+
+def paseo_model(cli: str, provider: str, model: str, effort: str | None,
+                host: str | None = None) -> tuple[str, str]:
+    """Specs name models as sonnet or sonnet-5-5-1m; Paseo takes the provider's model ID."""
+    remote = ["--host", host] if host else []
+    listing = _json_output(run([cli, "provider", "models", provider, *remote, "--json"]).stdout).get("data")
+    models = [item for item in listing or [] if isinstance(item, dict)]
+    if not models:
+        raise RunBlocked(f"Paseo provider {provider} lists no models; check `paseo provider ls`")
+    alias = (claude_alias(model) or "").replace("[1m]", "")
+    chosen = next((item for item in models if item.get("id") == model), None) or next(
+        (item for item in models if str(item.get("id", "")).startswith(f"claude-{alias}-")), None)
+    if not chosen:
+        ids = ", ".join(str(item.get("id")) for item in models)
+        raise RunBlocked(f"Model {model} is not offered by Paseo provider {provider}: {ids}")
+    options = chosen.get("thinkingOptionIds") or []
+    if effort and effort not in options:
+        raise RunBlocked(f"Effort {effort} is not offered by {chosen['id']}: {', '.join(options)}")
+    return str(chosen["id"]), effort or ""
+
+
+class PaseoQaHost:
+    """The QA agent runs as another Paseo agent in the implementer's workspace and worktree."""
+
+    name = "paseo"
+
+    def __init__(self, workspace: str | None):
+        self.workspace = workspace or os.environ.get("PASEO_AGENT_ID", "").strip()
+        if not self.workspace:
+            raise RunBlocked("Run qa-session inside the Paseo agent of the implementation or pass "
+                             "--workspace with its agent ID")
+        self.cli = paseo_cli()
+
+    def _agent(self, agent_id: str) -> dict[str, Any]:
+        result = run([self.cli, "inspect", agent_id, "--json"], check=False)
+        shown = _json_output(result.stdout) if result.returncode == 0 else {}
+        if not isinstance(shown, dict) or not shown.get("Id"):
+            raise RunBlocked(f"Paseo does not know agent {agent_id}")
+        return shown
+
+    def caller(self, implementation_session: str | None, exclude: tuple[str, ...] = ()) -> str:
+        caller = implementation_session or self.workspace
+        if caller in exclude:
+            raise RunBlocked("The implementation agent cannot be its own QA agent")
+        self._agent(caller)
+        return caller
+
+    def configuration(self, agent, model, effort, caller, spec, lane):
+        source = "explicit" if model else ("spec" if spec[0] else "default")
+        if not model:
+            model, effort = spec if spec[0] else (
+                SUPERSET_SMALL_LANE_QA_DEFAULT if lane == "small" else SUPERSET_QA_DEFAULT)
+        provider = agent or PASEO_QA_PROVIDER
+        model_id, thinking = paseo_model(self.cli, provider, model, effort)
+        return {"agent": provider, "model": model_id, "effort": thinking}, source
+
+    def status(self, session_id: str) -> str | None:
+        status = self._agent(session_id).get("Status")
+        return "working" if status in PASEO_WORKING else status
+
+    def create(self, state: dict[str, Any], name: str, prompt: str, configuration: dict[str, str]) -> str:
+        arguments = [self.cli, "run", "--no-wait", "--json", "--title", name,
+                     "--provider", configuration["agent"], "--model", configuration["model"],
+                     "--mode", "bypassPermissions", "--cwd", str(state["worktree"]),
+                     "--label", "issue-delivery=qa", "--label", f"run={state['runId']}"]
+        if configuration["effort"]:
+            arguments += ["--thinking", configuration["effort"]]
+        created = _json_output(run([*arguments, prompt]).stdout)
+        agent_id = created.get("agentId") if isinstance(created, dict) else None
+        if not agent_id:
+            raise RunBlocked("Paseo did not return the QA agent; check the workspace before retrying")
+        agent = self._agent(str(agent_id))
+        expected = Path(state["worktree"]).expanduser().resolve()
+        if Path(str(agent.get("Cwd") or "")).expanduser().resolve() != expected:
+            raise RunBlocked("The QA agent does not run in this run's worktree")
+        path = run_root(Path(state["worktree"]), state["runId"]) / SESSION_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"reviewSessionId": agent_id, "name": name}, indent=2) + "\n")
+        return str(agent_id)
+
+    def receipt(self) -> str:
+        return f"paseo-agent:{self.workspace}"
+
+    def send(self, session_id: str, message: str) -> None:
+        run([self.cli, "send", session_id, "--no-wait", "--prompt", message])
+
+    def stop_reason(self, session_id: str) -> dict[str, Any] | None:
+        result = run([self.cli, "logs", session_id, "--tail", "20"], check=False)
+        match = _LIMIT.search((result.stdout or "")[-4000:])
+        if not match:
+            return None
+        return {"reason": "usage-limit", "resets": match.group(1).strip() if match.group(1) else None}
+
+    def wait(self, session_id: str, timeout_seconds: float, poll_seconds: float) -> str | None:
+        run([self.cli, "wait", session_id, "--timeout", str(int(timeout_seconds)), "--json"], check=False)
+        state = self.status(session_id)
+        if state == "working":
+            raise RunBlocked("The QA agent is still working; run qa-wait again")
+        return state

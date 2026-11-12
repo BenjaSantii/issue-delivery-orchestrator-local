@@ -19,17 +19,19 @@ PHASES = (
     "review-convergence",
 )
 REVIEW_METHODS = ("cua-driver", "codex-browser", "playwright")
-DEVELOPMENT_MODES = ("codex", "superset", "vanilla", "conductor", "t3")
+DEVELOPMENT_MODES = ("codex", "superset", "vanilla", "conductor", "t3", "paseo")
 MODE_REVIEWERS = {
     "codex": "codex-browser",
     "superset": "cua-driver",
     "vanilla": "cua-driver",
     "conductor": "playwright",
     "t3": "cua-driver",
+    "paseo": "cua-driver",
 }
 ALTERNATE_MODE_REVIEWERS = {
     "superset": ("playwright",),
     "t3": ("playwright",),
+    "paseo": ("playwright",),
 }
 RESUMABLE_STATUSES = {"active", "blocked", "needs_user_decision", "completed_preserved"}
 
@@ -266,7 +268,7 @@ def select_review_method(state: dict[str, Any], method: str) -> dict[str, Any]:
     if state.get("mode"):
         raise RunBlocked(
             "Reviewer is fixed by development mode; choose codex, superset, "
-            "vanilla, conductor or t3 when creating a run"
+            "vanilla, conductor, t3 or paseo when creating a run"
         )
     if method not in REVIEW_METHODS:
         raise OrchestrationError(f"Unsupported reviewer method: {method}")

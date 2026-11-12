@@ -163,6 +163,28 @@ o en un worktree nuevo, y el QA tiene que correr en este mismo checkout. Por eso
 
 No abrir el QA con `t3 thread start` ni en otro worktree: el registro lo rechaza.
 
+## En Paseo
+
+Desde el agente de Paseo que implementa:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-session --url <url> [--agent <provider>]
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-wait
+python3 <plugin-root>/scripts/issue-delivery <issue> qa-resume
+```
+
+- **Generador.** Es el agente que llama, tomado de `PASEO_AGENT_ID`.
+- **QA.** `qa-session` crea otro agente con `paseo run` en el mismo workspace y el mismo worktree,
+  en modo `bypassPermissions`, y escribe su ID en `validation/qa-session.json`. El provider es
+  `claude-dev4` salvo `--agent`. El modelo sigue el orden de siempre (`--model`, el spec, `sonnet`
+  con `high`) y se traduce al ID del provider con `paseo provider models`; el esfuerzo pasa como
+  `--thinking`.
+- **Esperar y retomar.** `qa-wait` usa `paseo wait` y `paseo inspect`, y busca el límite de uso en
+  `paseo logs`. `qa-resume` le escribe con `paseo send`. Si el agente ya no sirve, usar
+  `qa-session --replace`.
+
+No crear el agente de QA a mano con `paseo run`: el registro sólo acepta el que crea `qa-session`.
+
 ## Otros hosts
 
 En Codex/Vanilla, usar el mecanismo del host para abrir un chat o reviewer con contexto

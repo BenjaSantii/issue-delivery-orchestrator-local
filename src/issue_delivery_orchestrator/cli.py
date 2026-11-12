@@ -115,6 +115,11 @@ from .superset_launch import (
     superset_host,
     superset_project_id,
 )
+from .paseo_launch import (
+    DEFAULT_PROVIDER as PASEO_DEFAULT_PROVIDER,
+    build_paseo_launch,
+    create_paseo_agent,
+)
 from .t3_launch import (
     DEFAULT_PROVIDER as T3_DEFAULT_PROVIDER,
     build_t3_launch,
@@ -233,6 +238,32 @@ def parser() -> argparse.ArgumentParser:
         "--confirm",
         action="store_true",
         help="Create the thread; without it the command only prints the plan",
+    )
+    paseo_parser = actions.add_parser(
+        "paseo-launch",
+        help="Start the issue as a Paseo agent in a new worktree on a Paseo host: the Grill when "
+        "spec or tickets are missing, delivery when both are approved",
+    )
+    paseo_parser.add_argument("--paseo-host", default="",
+                              help="Paseo daemon endpoint, such as ssh://root@host "
+                              "(ISSUE_DELIVERY_PASEO_HOST)")
+    paseo_parser.add_argument("--paseo-repo", default="",
+                              help="Repository checkout on the Paseo host that the new worktree "
+                              "branches from (ISSUE_DELIVERY_PASEO_REPO)")
+    paseo_parser.add_argument("--provider", default="",
+                              help="Paseo provider for the agent (ISSUE_DELIVERY_PASEO_PROVIDER, "
+                              "default claude-dev4)")
+    paseo_parser.add_argument("--model", default="",
+                              help="Model for the agent (ISSUE_DELIVERY_PASEO_MODEL, default opus)")
+    paseo_parser.add_argument("--effort", default="",
+                              help="Thinking option for the agent (ISSUE_DELIVERY_PASEO_EFFORT)")
+    paseo_parser.add_argument("--setup", default="",
+                              help="Command the agent runs first to prepare the new worktree "
+                              "(ISSUE_DELIVERY_PASEO_SETUP)")
+    paseo_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Create the agent; without it the command only prints the plan",
     )
     recover = actions.add_parser(
         "cloud-recover",
@@ -435,6 +466,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return superset_launch(args)
     if args.action == "t3-launch":
         return t3_launch(args)
+    if args.action == "paseo-launch":
+        return paseo_launch(args)
     if args.action == "cloud-resume":
         return cloud_resume(args)
     if args.action == "cloud-recover":
@@ -787,6 +820,51 @@ def t3_launch(args: argparse.Namespace) -> dict[str, Any]:
             "link": created.get("link") or (created.get("thread") or {}).get("link")}
 
 
+def paseo_launch(args: argparse.Namespace) -> dict[str, Any]:
+    configuration = settings()
+    # settings() loads the orchestrator .env, so its values are read only now.
+    option = lambda value, name, default="": value or os.environ.get(name, "").strip() or default
+    repository = _repository(configuration.repository, None)
+    linear, credential_source = _verified_linear()
+    readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
+    if not args.stack_parent:
+        drop_merged_blockers(readiness, repository, configuration.pr_target_branch)
+    stack_parent = stack_parent_for(readiness, args.stack_parent)
+    launch = build_paseo_launch(
+        readiness,
+        repository,
+        host=option(args.paseo_host, "ISSUE_DELIVERY_PASEO_HOST"),
+        remote_repository=option(args.paseo_repo, "ISSUE_DELIVERY_PASEO_REPO"),
+        base=args.base,
+        stack_parent=stack_parent,
+        provider=option(args.provider, "ISSUE_DELIVERY_PASEO_PROVIDER", PASEO_DEFAULT_PROVIDER),
+        model=option(args.model, "ISSUE_DELIVERY_PASEO_MODEL") or None,
+        effort=option(args.effort, "ISSUE_DELIVERY_PASEO_EFFORT") or None,
+        setup=option(args.setup, "ISSUE_DELIVERY_PASEO_SETUP") or None,
+        implement_model=args.implement_model,
+        qa_model=args.qa_model,
+        qa_effort=args.qa_effort,
+    )
+    plan = {
+        "credentialSource": credential_source,
+        "readiness": readiness,
+        "stackParent": stack_parent,
+        "startsAt": launch["startsAt"],
+        "host": launch["host"],
+        "provider": launch["provider"],
+        "model": launch["model"],
+        "effort": launch["effort"],
+        "title": launch["title"],
+        "workspaceBase": launch["workspaceBase"],
+        "message": launch["message"],
+        "created": False,
+    }
+    if not args.confirm:
+        return plan
+    created = create_paseo_agent(launch)
+    return {**plan, "created": True, "agentId": created["agentId"], "cwd": created.get("cwd")}
+
+
 def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
     if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip() == "0":
         raise RunBlocked("cloud-launch runs from your machine, not inside a cloud workspace")
@@ -958,6 +1036,13 @@ def bootstrap(
         )
     elif mode == "t3":
         worktree = workspace.adopt_t3(
+            requested_worktree,
+            issue.branch_name,
+            args.base,
+            issue.identifier,
+        )
+    elif mode == "paseo":
+        worktree = workspace.adopt_paseo(
             requested_worktree,
             issue.branch_name,
             args.base,
@@ -1381,6 +1466,8 @@ def _requested_worktree(explicit: Path | None, mode: str | None) -> Path | None:
         return None
     if mode in {None, "t3"} and os.environ.get("T3CODE_THREAD_ID", "").strip():
         return Path.cwd()
+    if mode in {None, "paseo"} and os.environ.get("PASEO_AGENT_ID", "").strip():
+        return Path(os.environ.get("PASEO_AGENT_CWD") or Path.cwd())
     raw = os.environ.get("SUPERSET_WORKSPACE_PATH")
     return Path(raw) if raw else None
 
@@ -1398,6 +1485,9 @@ def _new_run_mode(
 
     if os.environ.get("T3CODE_THREAD_ID", "").strip():
         return "t3", "t3-environment"
+
+    if os.environ.get("PASEO_AGENT_ID", "").strip():
+        return "paseo", "paseo-environment"
 
     candidate = worktree.expanduser().resolve()
     superset_workspace = os.environ.get("SUPERSET_WORKSPACE_PATH", "").strip()
@@ -1430,11 +1520,11 @@ def _new_run_reviewer(mode: str, explicit: str | None) -> tuple[str, str]:
         if not mode_allows_reviewer(mode, explicit):
             raise RunBlocked(
                 f"{mode} mode cannot use reviewer {explicit}; codex uses codex-browser, "
-                "superset and t3 use cua-driver or playwright, vanilla uses cua-driver and "
+                "superset, t3 and paseo use cua-driver or playwright, vanilla uses cua-driver and "
                 "conductor uses playwright"
             )
         return explicit, "explicit"
-    if mode in {"superset", "t3"} and _is_headless_host():
+    if mode in {"superset", "t3", "paseo"} and _is_headless_host():
         return "playwright", "headless-host"
     return MODE_REVIEWERS[mode], "mode-default"
 
@@ -1576,7 +1666,7 @@ def _next_action(state: dict[str, Any]) -> str:
         )
     if (
         state.get("currentPhase") == "manual-revision"
-        and run_mode(state) in {"superset", "t3"}
+        and run_mode(state) in {"superset", "t3", "paseo"}
         and review_method(state) == "playwright"
     ):
         return (

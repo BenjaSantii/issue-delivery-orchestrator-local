@@ -255,7 +255,12 @@ def qa_host(mode: str, workspace: str | None, launched: str | None = None):
         from .qa_hosts import T3QaHost
 
         return T3QaHost(workspace, launched)
-    raise RunBlocked("Automatic QA chat creation is supported for new Conductor, Superset and T3 runs")
+    if mode == "paseo":
+        from .qa_hosts import PaseoQaHost
+
+        return PaseoQaHost(workspace)
+    raise RunBlocked("Automatic QA chat creation is supported for new Conductor, Superset, T3 and "
+                     "Paseo runs")
 
 
 def resume_message(pinned: dict[str, str], note: str | None) -> str:
@@ -301,14 +306,14 @@ def qa_prompt(state: dict[str, Any], pinned: dict[str, str], urls: list[str],
               plan: dict[str, Any] | None = None, brief: str | None = None,
               host: str = "conductor") -> str:
     root = run_root(Path(state["worktree"]), state["runId"])
-    if host in ("superset", "t3"):
+    if host in ("superset", "t3", "paseo"):
         identity = (f"reviewSessionId igual al valor de {root}/validation/qa-session.json, que el "
                     "controlador escribe al crear esta conversación (si aún no existe, espera unos "
                     "segundos y vuelve a leerlo)")
         surface = ("En este host sin pantalla la revisión móvil SIEMPRE es simulación web; no pidas "
                    "teléfono, ADB ni emulador nativo. " if host == "superset" else
-                   "En T3 la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB ni "
-                   "emulador nativo. ")
+                   f"En {'T3' if host == 't3' else 'Paseo'} la revisión móvil SIEMPRE es simulación "
+                   "web; no pidas teléfono, ADB ni emulador nativo. ")
     else:
         identity = "reviewSessionId igual al ID real de ESTA nueva conversación"
         surface = ("En Conductor la revisión móvil SIEMPRE es simulación web; no pidas teléfono, ADB "

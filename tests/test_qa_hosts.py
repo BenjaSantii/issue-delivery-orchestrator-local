@@ -293,5 +293,135 @@ class T3QaTests(unittest.TestCase):
             fresh_qa.qa_host("superset", "ws-1", "thr-qa")
 
 
+PASEO_MODELS = [
+    {"id": "claude-opus-5-5", "thinkingOptionIds": ["low", "medium", "high", "xhigh", "max"]},
+    {"id": "claude-sonnet-5-5", "thinkingOptionIds": ["low", "medium", "high"]},
+    {"id": "claude-sonnet-5", "thinkingOptionIds": ["off", "low", "medium", "high"]},
+]
+
+
+class FakePaseo:
+    """Answers the paseo agent commands the QA host makes."""
+
+    def __init__(self, worktree):
+        self.worktree = worktree
+        self.agents = {"agent-impl": {"Id": "agent-impl", "Status": "running", "Cwd": worktree}}
+        self.created = []
+        self.sent = []
+        self.logs = {}
+
+    def __call__(self, args, **kwargs):
+        command = args[1]
+        if tuple(args[1:3]) == ("provider", "models"):
+            return FakeSuperset.reply(PASEO_MODELS)
+        if command == "inspect":
+            agent = self.agents.get(args[2])
+            if agent is None:
+                return SimpleNamespace(stdout="", returncode=1, stderr="not found")
+            return FakeSuperset.reply(agent)
+        if command == "run":
+            agent_id = f"agent-qa-{len(self.created) + 1}"
+            self.created.append(list(args))
+            self.agents[agent_id] = {"Id": agent_id, "Status": "running",
+                                     "Cwd": args[args.index("--cwd") + 1]}
+            return FakeSuperset.reply({"agentId": agent_id, "status": "running"})
+        if command == "wait":
+            self.agents[args[2]]["Status"] = "idle"
+            return FakeSuperset.reply({"agentId": args[2], "status": "idle"})
+        if command == "logs":
+            return SimpleNamespace(stdout=self.logs.get(args[2], ""), returncode=0, stderr="")
+        if command == "send":
+            self.sent.append((args[2], args[args.index("--prompt") + 1]))
+            return FakeSuperset.reply({})
+        raise AssertionError(f"unexpected paseo call {args}")
+
+
+class PaseoQaTests(unittest.TestCase):
+    setUp = test_fresh_qa.FreshQATests.setUp
+
+    def prepare(self, spec_lines=""):
+        self.state["mode"] = {"name": "paseo"}
+        self.state.pop("qaSession", None)
+        spec = self.fixture.worktree / self.state["artifacts"]["spec"]
+        spec.write_text(spec.read_text() + spec_lines)
+        self.paseo = FakePaseo(str(self.fixture.worktree))
+        patches = [
+            patch("issue_delivery_orchestrator.qa_hosts.run", side_effect=self.paseo),
+            patch("issue_delivery_orchestrator.qa_hosts.paseo_cli", return_value="paseo"),
+            patch.dict("os.environ", {"PASEO_AGENT_ID": "agent-impl"}),
+        ]
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+
+    def launch(self, **options):
+        return fresh_qa.launch(self.state, None, None, ["http://localhost:3000"], **options)
+
+    def test_qa_runs_as_another_agent_in_this_worktree_on_dev4_by_default(self):
+        self.prepare()
+
+        entry = self.launch()
+
+        args = self.paseo.created[0]
+        flag = lambda name: args[args.index(name) + 1]
+        self.assertEqual((flag("--provider"), flag("--model"), flag("--thinking"), flag("--mode")),
+                         ("claude-dev4", "claude-sonnet-5-5", "high", "bypassPermissions"))
+        self.assertEqual(flag("--cwd"), str(self.fixture.worktree))
+        self.assertIn("En Paseo la revisión móvil", args[-1])
+        self.assertEqual((entry["implementationSessionId"], entry["reviewSessionId"]),
+                         ("agent-impl", "agent-qa-1"))
+        self.assertEqual(entry["hostReceipt"], "paseo-agent:agent-impl")
+        session = json.loads((self.fixture.root / "validation" / "qa-session.json").read_text())
+        self.assertEqual(session["reviewSessionId"], "agent-qa-1")
+        self.assertEqual(self.launch(), entry)
+        self.assertEqual(len(self.paseo.created), 1)
+
+    def test_spec_or_flags_pick_the_model_and_unknown_choices_block_before_launch(self):
+        self.prepare("\nQA Model: opus-5-5-1m\nQA Effort: max\n")
+        entry = self.launch()
+        self.assertEqual((entry["agent"], entry["model"], entry["effort"]),
+                         ("claude-dev4", "claude-opus-5-5", "max"))
+        with self.assertRaisesRegex(RunBlocked, "not offered by Paseo"):
+            fresh_qa.qa_host("paseo", None).configuration(None, "gpt-5", None, "agent-impl",
+                                                         (None, None), "standard")
+        with self.assertRaisesRegex(RunBlocked, "Effort max is not offered"):
+            fresh_qa.qa_host("paseo", None).configuration(None, "sonnet", "max", "agent-impl",
+                                                         (None, None), "standard")
+
+    def test_a_qa_agent_outside_the_worktree_is_rejected(self):
+        self.prepare()
+        original = self.paseo.__call__
+
+        def elsewhere(args, **kwargs):
+            reply = original(args, **kwargs)
+            if args[1] == "run":
+                self.paseo.agents[f"agent-qa-{len(self.paseo.created)}"]["Cwd"] = "/tmp/elsewhere"
+            return reply
+
+        with patch("issue_delivery_orchestrator.qa_hosts.run", side_effect=elsewhere), \
+                self.assertRaisesRegex(RunBlocked, "does not run in this run's worktree"):
+            self.launch()
+
+    def test_wait_reports_a_reviewer_stopped_by_the_usage_limit_and_resume_wakes_it(self):
+        self.prepare()
+        entry = self.launch()
+        self.paseo.logs["agent-qa-1"] = "[Assistant] You've hit your session limit · resets 3pm"
+
+        waited = observability_cli.wait_for_qa(self.state, 1)
+
+        self.assertEqual(waited["status"], "idle")
+        self.assertEqual((waited["state"], waited["reason"], waited["resets"]),
+                         ("stopped", "usage-limit", "3pm"))
+        resumed = fresh_qa.resume(self.state)
+        self.assertTrue(resumed["resumed"])
+        self.assertEqual(self.paseo.sent[-1][0], entry["reviewSessionId"])
+        self.assertIn("Retoma el QA", self.paseo.sent[-1][1])
+
+    def test_qa_session_must_run_inside_a_paseo_agent(self):
+        with patch.dict("os.environ", {"PASEO_AGENT_ID": ""}), \
+                self.assertRaisesRegex(RunBlocked, "inside the Paseo agent"):
+            fresh_qa.qa_host("paseo", None)
+
+
 if __name__ == "__main__":
     unittest.main()
