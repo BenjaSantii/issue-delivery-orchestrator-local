@@ -15,7 +15,7 @@ lint, typecheck, migraciones fuera de orden o snapshots de contrato stale.
   `No ejecutado — modo focal, cubierto por la CI`.
 
 Ejecutar las filas en orden, una a la vez. Nunca correr Jest en paralelo con typecheck, lint u
-otro Jest.
+otro Jest. Si el host tiene `heavy`, anteponerlo a cada comando de la tabla.
 
 ## Fuente de verdad
 

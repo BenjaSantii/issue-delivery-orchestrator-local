@@ -50,6 +50,10 @@ de tests; informar el recorte al implementador sin modificar archivos desde esta
 5. Ejecutar una sola tarea pesada a la vez: nunca Jest en paralelo con typecheck, lint u otro
    Jest, y Jest con `--runInBand`. En paralelo el sistema mata los procesos por memoria y cada
    reintento cuesta otra corrida.
+6. Si el host tiene el comando `heavy` (`command -v heavy`), anteponerlo a todo Jest, typecheck,
+   lint y `nx run-many`: `heavy pnpm nx run <proyecto>:test -- --runInBand ...`. `heavy` limita
+   cuántas tareas pesadas corren a la vez en toda la máquina, también entre agentes distintos, y
+   espera solo si no hay turno. No lanzarlo en segundo plano para saltarse la espera.
 
 En TurboShop, ejecutar `pnpm` desde la raíz. No asumir que `nx test <app>` es el
 default: primero buscar la forma focal ya usada por el proyecto.
