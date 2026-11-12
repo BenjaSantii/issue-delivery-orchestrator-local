@@ -1348,7 +1348,12 @@ def publish_qa_results(state: dict[str, Any], results_file: Path) -> dict[str, A
     return {"published": True, "qa": state["qa"]}
 
 
-AFTER_MANUAL_REVISION = ("pr-creation", "review-convergence")
+def _manual_revision_completed(state: dict[str, Any]) -> bool:
+    # A finished run has no current phase, but blocker fixes after it still skip QA.
+    return any(
+        item.get("phase") == "manual-revision" and item.get("status") == "completed"
+        for item in state.get("phases") or []
+    )
 
 
 def publish_run(state: dict[str, Any], runtime_id: str | None) -> dict[str, Any]:
@@ -1376,7 +1381,7 @@ def publish_run(state: dict[str, Any], runtime_id: str | None) -> dict[str, Any]
     if qa_results.is_file() and approved_qa_cases(state) is not None:
         verified = (read_json(qa_results) or {}).get("verifiedCommit")
         head = run(["git", "rev-parse", "HEAD"], cwd=worktree).stdout.strip()
-        if state.get("currentPhase") in AFTER_MANUAL_REVISION and verified != head:
+        if _manual_revision_completed(state) and verified != head:
             # Manual revision already accepted this QA; blocker commits after it do not rerun QA.
             result["qa"] = {"skipped": True, "verifiedCommit": verified}
         else:

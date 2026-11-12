@@ -551,5 +551,38 @@ class CliModeTests(unittest.TestCase):
             return settings()
 
 
+class PublishRunTests(unittest.TestCase):
+    def test_finished_run_skips_stale_qa_and_publishes_validation_after_blocker_fixes(self):
+        from issue_delivery_orchestrator import cli
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "qa-results.json").write_text('{"verifiedCommit": "qa-sha"}')
+            (folder / "pr-validation.md").write_text("## Validación")
+            state = {
+                "worktree": directory,
+                "pr": {"url": "https://github.com/o/r/pull/1"},
+                "currentPhase": None,
+                "status": "completed_preserved",
+                "phases": [
+                    {"phase": "manual-revision", "status": "completed"},
+                    {"phase": "review-convergence", "status": "completed"},
+                ],
+            }
+            with (
+                patch.object(cli, "validation_dir", return_value=folder),
+                patch.object(cli, "ui_manifest", return_value=None),
+                patch.object(cli, "approved_qa_cases", return_value=[{"QA ID": "QA-001"}]),
+                patch.object(cli, "run", return_value=SimpleNamespace(stdout="head-sha\n")),
+                patch.object(cli, "GitHubClient"),
+                patch.object(cli, "publish_qa_results", side_effect=RunBlocked("fresh QA")),
+                patch.object(cli, "publish_validation", return_value={"sha": "head-sha"}),
+            ):
+                result = cli.publish_run(state, None)
+
+        self.assertEqual(result["qa"], {"skipped": True, "verifiedCommit": "qa-sha"})
+        self.assertEqual(result["validation"], "head-sha")
+
+
 if __name__ == "__main__":
     unittest.main()
