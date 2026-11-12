@@ -257,7 +257,7 @@ class T3QaHost:
             time.sleep(poll_seconds)
 
 
-PASEO_QA_PROVIDER = "claude-dev4"
+PASEO_QA_PROVIDER = "claude-dev5"
 PASEO_WORKING = ("initializing", "running")
 
 

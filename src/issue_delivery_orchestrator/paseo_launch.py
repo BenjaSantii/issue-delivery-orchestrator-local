@@ -10,7 +10,7 @@ from .qa_hosts import paseo_cli, paseo_model
 from .t3_launch import needs_grill, t3_launch_message
 from .util import run
 
-DEFAULT_PROVIDER = "claude-dev4"
+DEFAULT_PROVIDER = "claude-dev5"
 DEFAULT_MODEL = "opus"
 
 

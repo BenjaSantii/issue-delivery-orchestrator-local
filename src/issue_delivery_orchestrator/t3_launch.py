@@ -47,7 +47,7 @@ QA_STEPS = {
            "<threadId>`."),
     "paseo": ("agente de Paseo",
               "El QA corre en otro agente de Paseo del mismo workspace: créalo con `qa-session`, que "
-              "usa el provider `claude-dev4` salvo que pases `--agent`."),
+              "usa el provider `claude-dev5` salvo que pases `--agent`."),
 }
 
 

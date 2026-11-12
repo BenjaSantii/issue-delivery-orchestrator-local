@@ -252,7 +252,7 @@ def parser() -> argparse.ArgumentParser:
                               "branches from (ISSUE_DELIVERY_PASEO_REPO)")
     paseo_parser.add_argument("--provider", default="",
                               help="Paseo provider for the agent (ISSUE_DELIVERY_PASEO_PROVIDER, "
-                              "default claude-dev4)")
+                              "default claude-dev5)")
     paseo_parser.add_argument("--model", default="",
                               help="Model for the agent (ISSUE_DELIVERY_PASEO_MODEL, default opus)")
     paseo_parser.add_argument("--effort", default="",

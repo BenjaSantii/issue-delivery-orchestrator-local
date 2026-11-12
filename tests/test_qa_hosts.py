@@ -357,7 +357,7 @@ class PaseoQaTests(unittest.TestCase):
     def launch(self, **options):
         return fresh_qa.launch(self.state, None, None, ["http://localhost:3000"], **options)
 
-    def test_qa_runs_as_another_agent_in_this_worktree_on_dev4_by_default(self):
+    def test_qa_runs_as_another_agent_in_this_worktree_on_dev5_by_default(self):
         self.prepare()
 
         entry = self.launch()
@@ -365,7 +365,7 @@ class PaseoQaTests(unittest.TestCase):
         args = self.paseo.created[0]
         flag = lambda name: args[args.index(name) + 1]
         self.assertEqual((flag("--provider"), flag("--model"), flag("--thinking"), flag("--mode")),
-                         ("claude-dev4", "claude-sonnet-5-5", "high", "bypassPermissions"))
+                         ("claude-dev5", "claude-sonnet-5-5", "high", "bypassPermissions"))
         self.assertEqual(flag("--cwd"), str(self.fixture.worktree))
         self.assertIn("En Paseo la revisión móvil", args[-1])
         self.assertEqual((entry["implementationSessionId"], entry["reviewSessionId"]),
@@ -380,7 +380,7 @@ class PaseoQaTests(unittest.TestCase):
         self.prepare("\nQA Model: opus-5-5-1m\nQA Effort: max\n")
         entry = self.launch()
         self.assertEqual((entry["agent"], entry["model"], entry["effort"]),
-                         ("claude-dev4", "claude-opus-5-5", "max"))
+                         ("claude-dev5", "claude-opus-5-5", "max"))
         with self.assertRaisesRegex(RunBlocked, "not offered by Paseo"):
             fresh_qa.qa_host("paseo", None).configuration(None, "gpt-5", None, "agent-impl",
                                                          (None, None), "standard")
