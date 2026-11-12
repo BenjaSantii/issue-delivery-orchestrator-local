@@ -265,6 +265,17 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Create the agent; without it the command only prints the plan",
     )
+    proto_serve = actions.add_parser(
+        "prototype-serve",
+        help="Serve the issue's HTML prototype as a Paseo service and print the URL to open",
+    )
+    proto_serve.add_argument("--dir", type=Path, help="Prototype directory (default: the issue's)")
+    proto_publish = actions.add_parser(
+        "prototype-publish",
+        help="Record the user's approval and anchor the prototype and its screenshots in Linear",
+    )
+    proto_publish.add_argument("--dir", type=Path, help="Prototype directory (default: the issue's)")
+    proto_publish.add_argument("--approval", required=True, help="The user's approval, in their words")
     recover = actions.add_parser(
         "cloud-recover",
         help="Wake the implementation chats a usage limit stopped (issue ID, or `all`)",
@@ -468,6 +479,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return t3_launch(args)
     if args.action == "paseo-launch":
         return paseo_launch(args)
+    if args.action in ("prototype-serve", "prototype-publish"):
+        return prototype_action(args)
     if args.action == "cloud-resume":
         return cloud_resume(args)
     if args.action == "cloud-recover":
@@ -818,6 +831,25 @@ def t3_launch(args: argparse.Namespace) -> dict[str, Any]:
     created = create_t3_thread(launch)
     return {**plan, "created": True, "threadId": created["threadId"],
             "link": created.get("link") or (created.get("thread") or {}).get("link")}
+
+
+def prototype_action(args: argparse.Namespace) -> dict[str, Any]:
+    from . import prototype
+    from .linear import normalize_issue_identifier
+    from .qa_hosts import paseo_cli
+
+    configuration = settings()
+    start = (args.worktree or Path.cwd()).expanduser().resolve()
+    worktree = Path(run(["git", "rev-parse", "--show-toplevel"], cwd=start).stdout.strip())
+    identifier = normalize_issue_identifier(args.issue)
+    directory = (args.dir.expanduser().resolve() if args.dir else prototype.prototype_dir(
+        worktree, identifier, configuration.runtime_root, configuration.runtime_namespace))
+    ensure_within(directory, worktree)
+    if args.action == "prototype-serve":
+        return prototype.serve(worktree, directory, paseo_cli())
+    linear, _ = _verified_linear()
+    return prototype.publish(linear, identifier, directory, args.approval,
+                             configuration.linear_marker_prefix)
 
 
 def paseo_launch(args: argparse.Namespace) -> dict[str, Any]:

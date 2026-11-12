@@ -135,6 +135,9 @@ def lint_spec(markdown: str) -> list[str]:
             )
     errors += lint_qa_script(markdown)
     errors += _lint_lane(markdown, applies)
+    prototype = re.search(r"(?m)^Prototype:[ \t]*(\S*)", markdown)
+    if prototype and prototype.group(1) not in ("yes", "no"):
+        errors.append(f"Unknown Prototype `{prototype.group(1)}`; use `yes` or `no`")
     return errors
 
 

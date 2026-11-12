@@ -43,6 +43,7 @@ class PaseoLaunchTests(unittest.TestCase):
         self.assertIn("--mode paseo --base test", launch["message"])
         self.assertIn("`qa-session`", launch["message"])
         self.assertNotIn("t3_thread_launch", launch["message"])
+        self.assertIn("`issue-delivery-prototype` antes de los tickets", launch["message"])
 
     def test_approved_issue_goes_straight_to_delivery_after_the_worktree_setup(self):
         launch = build(self.repo, readiness(), effort="high", setup="bash /repo/.superset/setup.sh")

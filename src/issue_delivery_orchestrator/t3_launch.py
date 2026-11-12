@@ -72,8 +72,9 @@ def t3_launch_message(readiness: dict[str, Any], *, grill: bool, base: str,
         start = (
             "2. Haz el Grill de la issue con `issue-delivery-grill`, una pregunta a la vez y con tu "
             "recomendación en cada una. Cuando apruebe el spec, publícalo con "
-            "`issue-delivery-spec-publisher`; arma los tickets con `issue-delivery-ticket-publisher` "
-            "y publícalos cuando los apruebe.\n"
+            "`issue-delivery-spec-publisher`. Si el spec dice `Prototype: yes` o el usuario lo pide, "
+            "haz el prototipo con `issue-delivery-prototype` antes de los tickets, salvo que lo salte. "
+            "Arma los tickets con `issue-delivery-ticket-publisher` y publícalos cuando los apruebe.\n"
             f"3. Con spec y tickets publicados y aprobados, {orchestrator[0].lower()}{orchestrator[1:]} "
             "Da por aprobados ese spec y esos tickets y no repitas el Grill.\n"
         )

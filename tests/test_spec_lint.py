@@ -61,6 +61,12 @@ class SpecLintTests(unittest.TestCase):
     def test_accepts_complete_catalog(self):
         self.assertEqual(lint_spec(spec(ALL_NO)), [])
 
+
+    def test_prototype_line_accepts_only_yes_or_no(self):
+        self.assertEqual(lint_spec("Prototype: yes\n" + spec(ALL_NO)), [])
+        self.assertEqual(lint_spec("Prototype: no\n" + spec(ALL_NO)), [])
+        self.assertIn("Unknown Prototype `maybe`; use `yes` or `no`",
+                      lint_spec("Prototype: maybe\n" + spec(ALL_NO)))
     def test_rejects_missing_catalog_and_wrong_testing_header(self):
         errors = lint_spec("## Testing Decisions\n\n| Risk | Decision |\n| - | - |\n| a | b |\n")
         self.assertTrue(any("Missing section `## Risk Catalog`" in e for e in errors))

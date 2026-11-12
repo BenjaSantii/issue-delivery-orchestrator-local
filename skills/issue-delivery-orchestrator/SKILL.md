@@ -216,7 +216,9 @@ Prohibir el handoff hasta disponer de evidencia posterior al último cambio para
    caminos felices, casos borde, permisos, fallos y concurrencia que la revisión manual ejecutará.
    El usuario la aprueba junto con el spec y el motor la valida al publicarlo.
 5. Obtener aprobación explícita del spec y del desglose.
-6. Invocar, en orden, `issue-delivery-spec-publisher` y `issue-delivery-ticket-publisher`.
+6. Invocar, en orden, `issue-delivery-spec-publisher`, `issue-delivery-prototype` (sólo si el spec
+   dice `Prototype: yes` o el usuario lo pide, y el usuario no lo salta) e
+   `issue-delivery-ticket-publisher`.
    Registrar la suma de `Estimated size` de los tickets con `size-estimate --lines <n>`. Si el
    desglose propuso slices, seguir [slicing.md](references/slicing.md); dividir o no es decisión
    del usuario.

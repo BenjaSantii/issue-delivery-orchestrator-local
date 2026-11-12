@@ -28,6 +28,7 @@ cleaned when resumed.
 - `$issue-delivery-orchestrator`
 - `$issue-delivery-grill`
 - `$issue-delivery-spec-publisher`
+- `$issue-delivery-prototype`
 - `$issue-delivery-ticket-publisher`
 - `$issue-delivery-implement`
 - `$test`
@@ -419,6 +420,24 @@ main checkout, so open the agent in a worktree workspace. `qa-session` creates t
 Paseo agent in the same workspace and worktree, on `claude-dev4` unless `--agent` says otherwise;
 `qa-wait` and `qa-resume` use `paseo wait`, `paseo inspect`, `paseo logs` and `paseo send`. On a
 Linux host without a display the reviewer is `playwright`.
+
+## Prototype
+
+When a spec says `Prototype: yes`, or the user asks, the agent builds a single self-contained HTML
+page after the spec and before the tickets: it simulates the feature with fake data and shows the
+screen before and after the change. The user can skip it.
+
+```bash
+python3 scripts/issue-delivery LOG-123 prototype-serve                              # serve it, print the URL
+python3 scripts/issue-delivery LOG-123 prototype-publish --approval "<their words>"  # anchor it in Linear
+```
+
+`prototype-serve` writes a `prototype` service into the worktree's `paseo.json`, hidden from git
+through `.git/info/exclude`, starts it and returns its URL; the agent opens it in a Paseo browser
+tab. The browser runs on the user's machine, so set `ISSUE_DELIVERY_PREVIEW_PORT` to the local port
+of a tunnel to the daemon when the daemon is remote. The user approves by sending screenshots in the
+chat; the agent captures the same screens as PNG files, and `prototype-publish` uploads them, the
+HTML as a download and its SHA-256 into a `prototype` block of the Linear description.
 
 ## Conductor Cloud
 

@@ -167,6 +167,15 @@ gate (fresh QA with DB verification, refactor review, PR convergence) and change
 fewer QA cases and a QA chat with `medium` effort. Ask the user to approve the lane with the spec;
 when in doubt, omit it.
 
+### Prototype
+
+Write `Prototype: yes` below `Spec ID` when the change is visually important: a new screen, a
+changed layout, a new or reordered flow, or a new state the user sees. Write `Prototype: no` for
+backend work, copy, isolated colors or fixes that do not change what the user sees. If the user asks
+for a prototype, write `yes` regardless. Ask the user to confirm it with the spec. After the spec is
+published, `issue-delivery-prototype` runs before the tickets when the line says `yes`; the user can
+still skip it.
+
 ## Resolve the architecture
 
 Define a high-level implementation architecture sufficient for an autonomous implementer. Cover the relevant owner, boundary, data flow, persistence, authorization, failure behavior, rollout, and testing decisions without prescribing a file-by-file patch.
@@ -184,6 +193,7 @@ Produce the following headings in exactly this order. Fill every section with co
 ```md
 Spec ID: SPEC-...
 Lane: <opcional; `small` sólo si cumple los criterios de vía chica>
+Prototype: <yes | no>
 QA Model: <modelo del QA según la dificultad>
 QA Effort: <esfuerzo del QA según la dificultad>
 
@@ -293,8 +303,9 @@ Present the final spec and briefly identify any material change from the source 
 
 If the user approves a Linear publication, invoke `issue-delivery-spec-publisher` with the destination. Preserve unrelated description content and the tickets block, and let that skill manage the mandatory HTML markers through the personal-key CLI. It must not use the Linear MCP connector, and comments remain controlled by `LINEAR_COMMENTS_ENABLED`.
 
-After publishing the spec, report that `issue-delivery-ticket-publisher` must produce the approved
-ticket block before `issue-delivery-orchestrator` can enter Implement.
+After publishing the spec, run `issue-delivery-prototype` when the spec says `Prototype: yes` or the
+user asks for one, unless the user skips it. Then report that `issue-delivery-ticket-publisher` must
+produce the approved ticket block before `issue-delivery-orchestrator` can enter Implement.
 
 Do not modify `AGENTS.md` during the interview. If the resulting decision creates a genuinely general architectural rule, explain it after the spec is complete and ask for explicit approval before editing `AGENTS.md`.
 

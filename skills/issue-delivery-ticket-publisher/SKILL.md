@@ -17,6 +17,10 @@ approved canonical spec as the only source of product scope.
 
 ## Ticket format
 
+If the issue has an approved `prototype` block (`Prototype ID: PROTO-<ISSUE>`), every ticket with
+`UI Changes: Yes` names it in `What to build` as the visual reference, and says which of its
+screens the ticket builds.
+
 Each ticket must use:
 
 ```md
