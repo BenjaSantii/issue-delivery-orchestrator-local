@@ -64,6 +64,39 @@ class FreshQATests(unittest.TestCase):
         with self.assertRaisesRegex(RunBlocked, "approved artifacts changed"):
             validate_qa_results(self.state, path)
 
+    def express(self, *, register=False):
+        spec = self.fixture.worktree / self.state["artifacts"]["spec"]
+        spec.write_text("Lane: express\n" + spec.read_text())
+        if not register:
+            self.state.pop("qaSession")
+        path = self.results()
+        data = json.loads(path.read_text())
+        data.pop("reviewSessionId")
+        data["qaMode"] = "main-session"
+        path.write_text(json.dumps(data))
+        return path
+
+    def test_express_accepts_qa_results_from_the_main_session(self):
+        result = validate_qa_results(self.state, self.express())
+        self.assertEqual(result["qaMode"], "main-session")
+        self.assertIn("Vía express", qa_comment_body("run-1", result, {}, self.fixture.worktree))
+        path = self.fixture.root / "validation" / "qa-results.json"
+        data = json.loads(path.read_text())
+        data.pop("qaMode")
+        path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(RunBlocked, '"qaMode": "main-session"'):
+            validate_qa_results(self.state, path)
+
+    def test_main_session_qa_is_refused_outside_express_or_after_a_fresh_qa(self):
+        path = self.results()
+        data = json.loads(path.read_text())
+        data["qaMode"] = "main-session"
+        path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(RunBlocked, "only allowed in express runs"):
+            validate_qa_results(self.state, path)
+        with self.assertRaisesRegex(RunBlocked, "registered a fresh QA conversation"):
+            validate_qa_results(self.state, self.express(register=True))
+
     def test_rejects_success_with_wrong_db_state_or_writable_connection(self):
         for corrupt in ("after", "readOnlyProof"):
             path = self.results()

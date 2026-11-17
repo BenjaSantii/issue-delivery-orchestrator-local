@@ -89,6 +89,29 @@ class StateTests(unittest.TestCase):
         self.assertEqual(self.state["status"], "completed_preserved")
         self.assertIsNone(self.state["currentPhase"])
 
+    def write_spec(self, body):
+        path = run_root(self.worktree, "run-1") / "planning" / "spec.md"
+        path.write_text(body)
+        self.state["artifacts"]["spec"] = str(path.relative_to(self.worktree))
+
+    def test_express_lane_skips_refactor_after_implement(self):
+        self.write_spec("Spec ID: SPEC-TS-1\nLane: express\n")
+        complete_phase(self.state, "grill")
+        complete_phase(self.state, "implement")
+        self.assertEqual(self.state["currentPhase"], "manual-revision")
+        self.assertEqual(self.state["phases"][-1],
+                         {**self.state["phases"][-1], "phase": "refactor", "status": "skipped"})
+        with self.assertRaises(RunBlocked):
+            complete_phase(self.state, "refactor")
+
+    def test_other_lanes_keep_refactor(self):
+        for lane in ("Lane: small\n", ""):
+            self.write_spec("Spec ID: SPEC-TS-1\n" + lane)
+            self.state.update(currentPhase="implement", phases=[])
+            with self.subTest(lane=lane):
+                complete_phase(self.state, "implement")
+                self.assertEqual(self.state["currentPhase"], "refactor")
+
     def test_rejects_out_of_order_checkpoint(self):
         with self.assertRaises(RunBlocked):
             complete_phase(self.state, "implement")

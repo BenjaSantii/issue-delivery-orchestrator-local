@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from .config import settings
 from .errors import OrchestrationError, RunBlocked
+from .spec_lint import approved_lane
 from .util import atomic_write_json, read_json
 
 
@@ -206,6 +207,10 @@ def complete_phase(
     state["phases"].append({"phase": phase, "status": "completed", "completedAt": now()})
     state["artifacts"].update(artifacts or {})
     state["blocker"] = None
+    if phase == "implement" and approved_lane(state) == "express":
+        state["phases"].append({"phase": "refactor", "status": "skipped",
+                                "reason": "express lane", "completedAt": now()})
+        index += 1
     if index + 1 < len(PHASES):
         state["currentPhase"] = PHASES[index + 1]
         state["status"] = "active"

@@ -288,6 +288,7 @@ def validate_qa_results(state: dict[str, Any], results_path: Path) -> dict[str, 
         "runtimeId": results["runtimeId"],
         "verifiedAt": results.get("verifiedAt"),
         "reviewSessionId": results.get("reviewSessionId"),
+        "qaMode": results.get("qaMode"),
         "cases": normalized,
     }
 
@@ -381,6 +382,8 @@ def _qa_summary(run_id: str, results: dict[str, Any]) -> list[str]:
         f"### {qa_comment_marker(run_id)}",
         "",
         f"Commit `{results['verifiedCommit'][:12]}` · runtime `{results['runtimeId']}`",
+        *(["", "Vía express: el QA lo ejecutó el chat principal, sin conversación de QA aparte."]
+          if results.get("qaMode") == "main-session" else []),
         *reuse,
         "",
         "| Caso | Tipo | Superficie | Cubre | Estado | Observado |",

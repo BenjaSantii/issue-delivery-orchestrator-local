@@ -1692,6 +1692,11 @@ def _next_action(state: dict[str, Any]) -> str:
         return "Resolve the recorded blocker, then run the resume action."
     if state["status"] == "completed_preserved":
         return "Wait for explicit human-review work or final cleanup after merge."
+    if state.get("currentPhase") == "manual-revision" and approved_lane(state) == "express":
+        return (
+            "Express lane: run the QA Script from this chat with the mode's reviewer, verify DB "
+            "consequences and write qa-results.json with \"qaMode\": \"main-session\"."
+        )
     if state.get("currentPhase") == "manual-revision" and state.get("observabilityVersion"):
         return (
             "Start/register a fresh QA conversation for this candidate using fresh-qa.md; "

@@ -9,6 +9,7 @@ from typing import Any
 
 from .cloud_launch import _json_output, conductor_cli, stop_reason, workspace_sessions
 from .errors import RunBlocked
+from .spec_lint import approved_lane
 from .stack import integration_ref
 from .state import now, run_mode, run_root, save_state
 from .util import ensure_within, run
@@ -434,13 +435,6 @@ def caller_configuration(cli: str, session: dict[str, Any]) -> dict[str, str]:
     return resolve_configuration(cli, session.get("model"), session.get("effort"), "Calling chat")
 
 
-def _lane(state: dict[str, Any]) -> str:
-    relative = (state.get("artifacts") or {}).get("spec")
-    path = Path(state["worktree"]) / relative if relative else None
-    match = re.search(r"(?m)^Lane:[ \t]*(\S+)", path.read_text()) if path and path.is_file() else None
-    return match.group(1).lower() if match else "standard"
-
-
 def _brief_path(state: dict[str, Any], brief: Path | None) -> str | None:
     if brief is None:
         return None
@@ -479,7 +473,7 @@ def launch(state: dict[str, Any], workspace: str | None, implementation_session:
         model, effort = stored["model"], stored.get("effort")
     agent = agent or stored.get("agent")
     spec = spec_qa_configuration(state)
-    configuration, source = host.configuration(agent, model, effort, caller, spec, _lane(state))
+    configuration, source = host.configuration(agent, model, effort, caller, spec, approved_lane(state))
     requested = sorted(set(rerun or []))
     if "all" in requested:
         if len(requested) > 1:
@@ -580,6 +574,15 @@ def validate_session(state: dict[str, Any], results: dict[str, Any]) -> None:
     if not state.get("observabilityVersion"):
         return
     entry = state.get("qaSession") or {}
+    if results.get("qaMode") == "main-session":
+        # Express runs QA in the implementing chat by design; every other lane needs a fresh one.
+        if approved_lane(state) != "express":
+            raise RunBlocked("Main-session QA is only allowed in express runs; start fresh QA")
+        if entry:
+            raise RunBlocked("This run registered a fresh QA conversation; publish its results")
+        return
+    if not entry and approved_lane(state) == "express":
+        raise RunBlocked('Express QA results must declare "qaMode": "main-session"')
     if not entry.get("freshContext") or not entry.get("reviewSessionId"):
         raise RunBlocked("Register a fresh QA conversation before accepting its results")
     if entry.get("reviewSessionId") == entry.get("implementationSessionId"):
