@@ -285,6 +285,10 @@ python3 <plugin-root>/scripts/issue-delivery <issue> qa-session \
 - Sólo se reutiliza si el spec y los tickets no cambiaron, el resultado anterior es del QA
   registrado y su commit, y ese commit sigue siendo ancestro de HEAD. Si no, `qa-session`
   devuelve BLOCKED y se repite sin `--rerun`.
+- No pedir con `--rerun` un caso `command` cuyo único paso sea correr tests, typecheck o lint si la
+  reparación ya los corrió con la skill `test` sobre el commit nuevo y pasaron: se hereda su PASS.
+  Anotar en el handoff qué comando de `test` lo cubre. Sí repetirlo si la reparación no los corrió
+  o si falló alguno.
 - Ante duda, `--rerun all`. Migraciones, schemas o contratos compartidos, auth/permisos y
   cambios transversales (layout, navegación, datos sembrados) siempre usan `all`.
 - El checkpoint valida los heredados contra su archivo archivado (capturas, salidas y

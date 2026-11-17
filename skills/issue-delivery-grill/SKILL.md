@@ -130,6 +130,8 @@ Write `## QA Script` after `Testing Decisions`, following the orchestrator's
 `references/qa-script.md`. It is the script manual revision will execute against the running
 system, not a list of unit tests:
 
+- no case whose only step runs unit tests, typecheck or lint; the `test` skill and CI parity own
+  those, and as a QA case they rerun every round without adding evidence;
 - one `happy-path` case per user story, with the seeded data and the observable result;
 - `edge-case`, `authorization` and `failure` cases for the limits, roles and uncertain states the
   spec names;

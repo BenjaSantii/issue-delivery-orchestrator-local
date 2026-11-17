@@ -30,6 +30,9 @@ temporales permanecen en el run ignorado; los tests de carrera exigidos sí se c
 - `Covers`: historias (`US-001`) y categorías del Risk Catalog en backticks.
 - `Surface`: `UI` (reviewer del modo), `API` (requests contra el Local Runtime) o `command`
   (script, job o consulta).
+  Un caso `command` observa comportamiento del sistema. No crear casos cuyo único paso sea correr
+  unit tests, typecheck o lint: eso ya lo cubren la skill `test` en cada ticket y la paridad con CI
+  antes del push, y como caso de QA se repite en cada ronda sin agregar evidencia.
 - `Steps`: precondición y pasos concretos, con los datos sembrados que se usarán.
 - `Expected`: resultado observable que decide PASS o FAIL.
 - `Evidence`: qué se guardará (captura, respuesta, tabla de resultados, lectura final).
