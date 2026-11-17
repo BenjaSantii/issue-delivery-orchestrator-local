@@ -202,6 +202,29 @@ class CliModeTests(unittest.TestCase):
                     publish_linear_block(state, "spec", body)
         self.assertIn("Risk Catalog", str(raised.exception))
 
+    def test_rejects_two_tickets_for_an_express_spec_before_writing_to_linear(self):
+        with tempfile.TemporaryDirectory() as raw:
+            worktree = Path(raw)
+            body = worktree / "tickets.md"
+            body.write_text("Ticket ID: TICKET-001\nEstimated size: 40\n\n"
+                            "Ticket ID: TICKET-002\nEstimated size: 40\n")
+            linear = SimpleNamespace(
+                issue=lambda _identifier: SimpleNamespace(
+                    id="issue-id", identifier="SFW-1",
+                    description="<!-- loop:spec:start -->\nLane: express\n<!-- loop:spec:end -->"),
+                update_description=lambda *_: self.fail("Linear must not be written"),
+            )
+            configuration = SimpleNamespace(linear_marker_prefix="loop",
+                                            linear_comments_enabled=False)
+            state = {"worktree": str(worktree), "issue": {"identifier": "SFW-1"}}
+            with (
+                patch("issue_delivery_orchestrator.cli._verified_linear",
+                      return_value=(linear, "keychain")),
+                patch("issue_delivery_orchestrator.cli.settings", return_value=configuration),
+                self.assertRaisesRegex(RunBlocked, "exactly one ticket, got 2"),
+            ):
+                publish_linear_block(state, "tickets", body)
+
     def test_accepts_linear_markdown_normalization_after_publish(self):
         with tempfile.TemporaryDirectory() as raw:
             worktree = Path(raw)

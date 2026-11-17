@@ -1,7 +1,12 @@
 import unittest
 
 from issue_delivery_orchestrator.errors import RunBlocked
-from issue_delivery_orchestrator.spec_lint import assert_spec_publishable, lint_spec
+from issue_delivery_orchestrator.spec_lint import (
+    assert_express_tickets,
+    assert_spec_publishable,
+    lint_express_tickets,
+    lint_spec,
+)
 
 TESTING = """## Testing Decisions
 
@@ -115,6 +120,39 @@ class SpecLintTests(unittest.TestCase):
         )
         errors = lint_spec(spec(fixed, CONSUMERS + "\n" + no_unknown, covered))
         self.assertTrue(any("unknown/uncertain outcome state" in e for e in errors))
+
+
+class LaneTests(unittest.TestCase):
+    def test_express_lane_accepts_a_low_risk_spec(self):
+        self.assertEqual(lint_spec("Lane: express\n" + spec(ALL_NO)), [])
+
+    def test_express_lane_rejects_concurrency_authorization_and_long_scripts(self):
+        for risk in ("concurrency", "roles-authorization"):
+            rows = ALL_NO.replace(f"| `{risk}` | No |", f"| `{risk}` | Yes |").replace(
+                "only reads config | — |", "only reads config | Approval race |")
+            with self.subTest(risk=risk):
+                self.assertIn(f"Lane express cannot apply {risk}; drop the Lane line",
+                              lint_spec("Lane: express\n" + spec(rows)))
+        many = "".join(QA_BASIC.replace("QA-001", f"QA-00{n}") for n in range(1, 6))
+        self.assertIn("Lane express allows at most 4 QA cases, got 5",
+                      lint_spec("Lane: express\n" + spec(ALL_NO, qa=many)))
+        self.assertIn("Unknown Lane `fast`; use `small`, `express` or omit the line",
+                      lint_spec("Lane: fast\n" + spec(ALL_NO)))
+
+    def test_express_tickets_must_be_one_small_ticket(self):
+        ticket = "Ticket ID: TICKET-001\nEstimated size: 60 product lines\n\n# Fix\n"
+        self.assertEqual(lint_express_tickets(ticket), [])
+        self.assertIn("exactly one ticket, got 2",
+                      lint_express_tickets(ticket + ticket.replace("001", "002"))[0])
+        self.assertIn("at most 150 estimated product lines, got 220",
+                      lint_express_tickets(ticket.replace("60", "220"))[0])
+        self.assertIn("numeric `Estimated size`",
+                      lint_express_tickets(ticket.replace("60 product lines", "small"))[0])
+        two = ticket + ticket.replace("001", "002")
+        with self.assertRaisesRegex(RunBlocked, "express lane"):
+            assert_express_tickets("Lane: express\n", two)
+        assert_express_tickets("Lane: small\n", two)
+        assert_express_tickets("Spec ID: SPEC-1\n", two)
 
 
 if __name__ == "__main__":

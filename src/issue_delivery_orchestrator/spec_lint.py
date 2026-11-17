@@ -9,6 +9,8 @@ discover one review round at a time.
 from __future__ import annotations
 
 import re
+from pathlib import Path
+from typing import Any
 
 from .errors import RunBlocked
 
@@ -36,12 +38,49 @@ _UNCERTAIN = re.compile(r"(?i)\b(unknown|uncertain|incierto|desconocido)\b")
 _EVIDENCE = re.compile(r"`[^`]+`|\b[\w.-]+/[\w./-]+|\b\w+\.(ts|tsx|js|py|sql|json)\b")
 # A small lane trades ceremony for speed, so it is only open to specs with little risk to replay.
 SMALL_LANE_MAX_QA_CASES = 4
+# Express skips the interview, the Refactor phase and the separate QA chat, so it only takes
+# one small ticket whose risks the main chat can verify on its own.
+EXPRESS_MAX_QA_CASES = 4
+EXPRESS_MAX_PRODUCT_LINES = 150
+EXPRESS_EXCLUDED_RISKS = ("concurrency", "roles-authorization")
+LANES = ("standard", "small", "express")
 _LANE = re.compile(r"(?m)^Lane:[ \t]*(\S+)")
+_TICKET_ID = re.compile(r"(?m)^Ticket ID:[ \t]*\S+")
+_ESTIMATE = re.compile(r"(?m)^Estimated size:[ \t]*(.*)$")
 
 
 def spec_lane(markdown: str) -> str:
     match = _LANE.search(markdown)
     return match.group(1).lower() if match else "standard"
+
+
+def approved_lane(state: dict[str, Any]) -> str:
+    """Lane of the run's approved spec snapshot, so it survives resumes without extra state."""
+    relative = (state.get("artifacts") or {}).get("spec")
+    path = Path(state["worktree"]) / relative if relative else None
+    return spec_lane(path.read_text()) if path and path.is_file() else "standard"
+
+
+def lint_express_tickets(tickets: str) -> list[str]:
+    count = len(_TICKET_ID.findall(tickets))
+    if count != 1:
+        return [f"Lane express allows exactly one ticket, got {count}; drop the Lane line"]
+    match = _ESTIMATE.search(tickets)
+    digits = re.match(r"\D*(\d+)", match.group(1)) if match else None
+    if not digits:
+        return ["Lane express needs a numeric `Estimated size` in its ticket"]
+    if int(digits.group(1)) > EXPRESS_MAX_PRODUCT_LINES:
+        return [f"Lane express allows at most {EXPRESS_MAX_PRODUCT_LINES} estimated product lines, "
+                f"got {digits.group(1)}; drop the Lane line"]
+    return []
+
+
+def assert_express_tickets(spec: str, tickets: str) -> None:
+    if spec_lane(spec) != "express":
+        return
+    errors = lint_express_tickets(tickets)
+    if errors:
+        raise RunBlocked("Tickets do not fit the express lane:\n- " + "\n- ".join(errors))
 
 
 def _section(markdown: str, heading: str) -> str | None:
@@ -147,14 +186,15 @@ def _lint_lane(markdown: str, applies: dict[str, bool]) -> list[str]:
     lane = spec_lane(markdown)
     if lane == "standard":
         return []
-    if lane != "small":
-        return [f"Unknown Lane `{lane}`; use `small` or omit the line"]
-    errors = []
-    if applies.get("concurrency"):
-        errors.append("Lane small cannot apply concurrency; drop the Lane line")
+    if lane not in LANES:
+        return [f"Unknown Lane `{lane}`; use `small`, `express` or omit the line"]
+    excluded = EXPRESS_EXCLUDED_RISKS if lane == "express" else ("concurrency",)
+    limit = EXPRESS_MAX_QA_CASES if lane == "express" else SMALL_LANE_MAX_QA_CASES
+    errors = [f"Lane {lane} cannot apply {risk}; drop the Lane line"
+              for risk in excluded if applies.get(risk)]
     cases = qa_cases(markdown) or []
-    if len(cases) > SMALL_LANE_MAX_QA_CASES:
-        errors.append(f"Lane small allows at most {SMALL_LANE_MAX_QA_CASES} QA cases, got {len(cases)}")
+    if len(cases) > limit:
+        errors.append(f"Lane {lane} allows at most {limit} QA cases, got {len(cases)}")
     return errors
 
 

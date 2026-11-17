@@ -39,7 +39,7 @@ from .evidence import prepare_evidence, publish_evidence, repair_github_evidence
 from .git_workspace import GitWorkspace
 from .run_evidence import ui_manifest, validation_dir
 from .github import GitHubClient
-from .spec_lint import assert_spec_publishable
+from .spec_lint import approved_lane, assert_express_tickets, assert_spec_publishable
 from .slicing import assert_size_accepted, record_decision, record_estimate, size_check
 from .stack import (
     link_stack,
@@ -520,6 +520,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return {"reviewer": selection, "state": _public_state(state)}
     if args.action == "checkpoint":
         artifacts = _parse_artifacts(args.artifact, Path(state["worktree"]))
+        if args.phase == "grill" and artifacts.get("spec") and artifacts.get("tickets"):
+            worktree = Path(state["worktree"])
+            assert_express_tickets((worktree / artifacts["spec"]).read_text(),
+                                   (worktree / artifacts["tickets"]).read_text())
         if args.phase == "manual-revision":
             manifest = artifacts.get("ui-manifest")
             if not manifest:
@@ -1258,6 +1262,13 @@ def publish_linear_block(
 
     linear, _ = _verified_linear()
     issue = linear.issue(state["issue"]["identifier"])
+    if block == "tickets":
+        try:
+            spec = extract_marker_block(
+                issue.description, marker_prefix=configuration.linear_marker_prefix, block="spec")
+        except OrchestrationError:
+            spec = ""
+        assert_express_tickets(spec, body)
     description = upsert_marker_block(
         issue.description,
         marker_prefix=configuration.linear_marker_prefix,
@@ -1645,6 +1656,7 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
         "discardedInitialStatus": state.get("discardedInitialStatus", []),
         "status": state["status"],
         "currentPhase": state.get("currentPhase"),
+        "lane": approved_lane(state),
         "reviewerMethod": review_method(state),
         "observabilityVersion": state.get("observabilityVersion"),
         "qaSession": state.get("qaSession"),
