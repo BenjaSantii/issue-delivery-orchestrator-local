@@ -1,6 +1,6 @@
 ---
 name: issue-delivery-prototype
-description: Armar, mostrar y hacer aprobar un prototipo HTML de una issue después del spec y antes de los tickets, cuando el spec marca `Prototype: yes` o el usuario lo pide. El prototipo es una sola página autocontenida que simula la función y muestra el antes y el después; se sirve como servicio de Paseo, se abre en una pestaña del workspace, y el HTML aprobado y sus pantallas quedan anclados en Linear. Usar desde el Grill o el orquestador de Issue Delivery Orchestrator; el usuario puede saltarlo.
+description: Armar, mostrar y hacer aprobar un prototipo HTML de una issue después del spec y antes de los tickets, cuando el spec marca `Prototype: yes` o el usuario lo pide. El prototipo es una sola página autocontenida que simula la función y muestra el antes y el después; se sirve como servicio de Paseo en una pestaña del workspace, o en el localhost que muestra Conductor, y el HTML aprobado y sus pantallas quedan anclados en Linear. Usar desde el Grill o el orquestador de Issue Delivery Orchestrator; el usuario puede saltarlo.
 ---
 
 # Prototipo de la issue
@@ -77,8 +77,13 @@ prototipo y rellena las pantallas y las notas; no cambies su estructura ni su es
    Settings → su host → Agents.
 2. Con cada cambio que pida, edita el mismo `index.html` y recarga la pestaña con
    `browser_reload`. No crees páginas nuevas por versión.
-3. Fuera de Paseo, `prototype-serve` se bloquea: entrega la ruta del archivo y pídele al usuario que
-   lo abra.
+3. En Conductor (local o cloud), el mismo comando levanta un servidor local en `127.0.0.1` y devuelve
+   `url` como `http://localhost:<puerto>/`. Conductor abre el localhost del workspace en su propia
+   interfaz: dale esa URL al usuario. Si lo vuelves a llamar, reutiliza el servidor que ya corre.
+   Para fijar el puerto, usa `ISSUE_DELIVERY_PROTOTYPE_PORT`. Con cada cambio, edita el mismo
+   `index.html` y pídele que recargue.
+4. Fuera de Paseo y de Conductor, `prototype-serve` se bloquea: entrega la ruta del archivo y pídele
+   al usuario que lo abra.
 
 ## Aprobarlo
 

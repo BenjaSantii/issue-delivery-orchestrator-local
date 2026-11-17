@@ -1,10 +1,13 @@
-"""Serve an HTML prototype from a Paseo workspace and anchor the approved screens in Linear."""
+"""Serve an HTML prototype from a Paseo or Conductor workspace and anchor the approved screens in Linear."""
 from __future__ import annotations
 
 import hashlib
 import json
 import os
 import re
+import socket
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -64,11 +67,54 @@ def viewer_url(proxy_url: str) -> str:
     return re.sub(r":\d+(?=/|$)", f":{port}", proxy_url, count=1) if port else proxy_url
 
 
+LOCAL_PORTS = range(8765, 8786)
+
+
+def _listening(port: int) -> bool:
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def serve_local(directory: Path) -> dict[str, Any]:
+    """Conductor shows the workspace's localhost in its own UI, so a local static server is enough."""
+    record = directory.with_name(f"{directory.name}.server.json")
+    previous = json.loads(record.read_text()) if record.is_file() else {}
+    port = previous.get("port")
+    if not (port and _alive(int(previous.get("pid", 0))) and _listening(int(port))):
+        wanted = os.environ.get("ISSUE_DELIVERY_PROTOTYPE_PORT", "").strip()
+        candidates = [int(wanted)] if wanted else list(LOCAL_PORTS)
+        port = next((candidate for candidate in candidates if not _listening(candidate)), None)
+        if port is None:
+            raise RunBlocked("No free local port for the prototype; set ISSUE_DELIVERY_PROTOTYPE_PORT")
+        log = directory.with_name(f"{directory.name}.server.log")
+        with log.open("ab") as output:
+            process = subprocess.Popen(
+                [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1",
+                 "--directory", str(directory)],
+                stdout=output, stderr=output, stdin=subprocess.DEVNULL, start_new_session=True)
+        record.write_text(json.dumps({"pid": process.pid, "port": port}) + "\n")
+    url = f"http://localhost:{port}/"
+    return {"entry": str(directory / ENTRY), "url": url, "proxyUrl": url.rstrip("/"),
+            "lifecycle": "running",
+            "next": "Give the user `url`; Conductor opens the workspace's localhost in its own browser"}
+
+
 def serve(worktree: Path, directory: Path, cli: str) -> dict[str, Any]:
-    if not os.environ.get("PASEO_AGENT_ID", "").strip():
-        raise RunBlocked("prototype-serve publishes through Paseo; run it inside a Paseo agent")
     if not (directory / ENTRY).is_file():
         raise RunBlocked(f"Write the prototype to {directory / ENTRY} before serving it")
+    if not os.environ.get("PASEO_AGENT_ID", "").strip():
+        if os.environ.get("CONDUCTOR_IS_LOCAL", "").strip():
+            return serve_local(directory)
+        raise RunBlocked("prototype-serve publishes through Paseo or Conductor; run it inside one of their agents")
     workspace = _workspace(cli, worktree)
     _register_script(worktree, directory)
     current = next((item for item in _scripts(cli, workspace) if item.get("scriptName") == SCRIPT), {})

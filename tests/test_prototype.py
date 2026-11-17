@@ -69,9 +69,29 @@ class PrototypeTests(unittest.TestCase):
         self.assertIn(".local-runtime/issue-delivery-orchestrator/prototype/LOG-9", script["command"])
         self.assertEqual(git(self.repo, "status", "--porcelain").strip(), "A  .gitignore")
 
-    def test_serve_only_runs_inside_paseo(self):
-        with patch.dict(os.environ, {"PASEO_AGENT_ID": ""}), self.assertRaisesRegex(RunBlocked, "Paseo"):
+    def test_serve_only_runs_inside_paseo_or_conductor(self):
+        with patch.dict(os.environ, {"PASEO_AGENT_ID": "", "CONDUCTOR_IS_LOCAL": ""}), \
+                self.assertRaisesRegex(RunBlocked, "Paseo or Conductor"):
             prototype.serve(self.repo, self.dir, "paseo")
+
+    def test_serve_in_conductor_starts_a_local_server_once_and_reuses_it(self):
+        with patch.dict(os.environ, {"PASEO_AGENT_ID": "", "CONDUCTOR_IS_LOCAL": "0",
+                                     "ISSUE_DELIVERY_PROTOTYPE_PORT": ""}):
+            first = prototype.serve(self.repo, self.dir, "paseo")
+            record = json.loads(self.dir.with_name("LOG-9.server.json").read_text())
+            self.addCleanup(lambda: os.kill(record["pid"], 15))
+            for _ in range(50):
+                if prototype._listening(record["port"]):
+                    break
+                __import__("time").sleep(0.1)
+            second = prototype.serve(self.repo, self.dir, "paseo")
+
+        self.assertEqual(first["url"], f"http://localhost:{record['port']}/")
+        self.assertEqual(second["url"], first["url"])
+        self.assertEqual(json.loads(self.dir.with_name("LOG-9.server.json").read_text())["pid"], record["pid"])
+        body = __import__("urllib.request").request.urlopen(first["url"] + "index.html", timeout=5).read()
+        self.assertIn(b"LOG-9", body)
+        self.assertFalse((self.repo / "paseo.json").exists())
 
     def test_publish_anchors_the_approved_screens_html_and_hash_in_linear(self):
         linear = FakeLinear()
