@@ -45,12 +45,16 @@ de tests; informar el recorte al implementador sin modificar archivos desde esta
    - typecheck de los proyectos afectados cuando cambió código tipado.
    Si no hay un spec obvio, usar los tests relacionados con los archivos cambiados (en Jest,
    `--findRelatedTests <archivos>`), no la suite del proyecto.
-4. No ejecutar la suite completa de un proyecto, E2E ni validación de todo el repo fuera de la
+4. En una reparación de un finding de QA o de review, ejecutar sólo el test del archivo cambiado
+   o `--findRelatedTests` de los archivos del delta. No correr typecheck salvo que la reparación
+   cambie tipos, firmas exportadas o contratos compartidos: el typecheck queda para la paridad con
+   CI antes del push. Informarlo en `Tests no ejecutados`.
+5. No ejecutar la suite completa de un proyecto, E2E ni validación de todo el repo fuera de la
    paridad completa previa a la PR, salvo que el usuario lo pida explícitamente.
-5. Ejecutar una sola tarea pesada a la vez: nunca Jest en paralelo con typecheck, lint u otro
+6. Ejecutar una sola tarea pesada a la vez: nunca Jest en paralelo con typecheck, lint u otro
    Jest, y Jest con `--runInBand`. En paralelo el sistema mata los procesos por memoria y cada
    reintento cuesta otra corrida.
-6. Si el host tiene el comando `heavy` (`command -v heavy`), anteponerlo a todo Jest, typecheck,
+7. Si el host tiene el comando `heavy` (`command -v heavy`), anteponerlo a todo Jest, typecheck,
    lint y `nx run-many`: `heavy pnpm nx run <proyecto>:test -- --runInBand ...`. `heavy` limita
    cuántas tareas pesadas corren a la vez en toda la máquina, también entre agentes distintos, y
    espera solo si no hay turno. No lanzarlo en segundo plano para saltarse la espera.
