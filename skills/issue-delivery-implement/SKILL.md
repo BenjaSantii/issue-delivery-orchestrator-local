@@ -17,7 +17,10 @@ de "Entregar". Incluir en ella los casos del QA Script que el cambio puede inval
 1. Inspeccionar código, tests y patrones existentes.
 2. Verificar si el comportamiento ya está satisfecho. En ese caso devolver `NO_OP` con evidencia y validación; no crear commit vacío.
 3. Identificar la solución mínima compatible con el spec. No añadir abstracciones, compatibilidad ni defensas especulativas.
-4. Si el pedido contradice spec, ticket o una decisión aprobada, no editar. Devolver `NEEDS_USER_DECISION` con las fuentes en conflicto.
+4. Ante una duda, aplicar la [política de decisiones](../issue-delivery-orchestrator/references/decision-policy.md):
+   deducir y seguir cuando una fuente la determine. Si el pedido contradice spec, ticket o una
+   decisión aprobada en un caso que esa política reserva al usuario, no editar y devolver
+   `NEEDS_USER_DECISION` con las fuentes en conflicto.
 5. Mantener cualquier log, prompt o memoria bajo el directorio del run en `.local-runtime`.
 
 ## Implementar
@@ -67,6 +70,7 @@ Antes del commit, devolver:
 - Comandos ejecutados y resultados.
 - Tests no ejecutados y razón.
 - Historias UI invalidadas por el cambio.
+- Decisiones tomadas sin aprobación del usuario, con pregunta, decisión, fuente y alternativas.
 - Estado de verificación por superficie: `REQUIRED`, `PASS` o `BLOCKED`, incluyendo herramienta y razón.
 
 Crear un commit descriptivo sólo cuando todo lo atribuible al ticket esté verde. Para una reparación de review, usar un commit por causa raíz; agrupar únicamente findings inseparables.

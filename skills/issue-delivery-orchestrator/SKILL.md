@@ -9,6 +9,12 @@ Operar como plano de control conversacional. Usar el CLI privado como motor dete
 
 Leer [workflow-contract.md](references/workflow-contract.md) antes de iniciar o reanudar una ejecución.
 
+Después del Grill, antes de preguntar al usuario o de devolver `NEEDS_USER_DECISION`, aplicar
+[decision-policy.md](references/decision-policy.md): deducir con sus fuentes en orden, preguntar
+sólo en los casos que reserva al usuario y juntar las preguntas de una etapa en una sola pausa.
+Registrar en `decisions.md` del run lo decidido sin aprobación, incluidas las decisiones que
+devuelven los workers, y listarlo en el mensaje final.
+
 Una petición de verificar blockers limita el trabajo a inspeccionar y clasificar el feedback existente, según `pr-blocker-convergence`. No convertirla en reparación o validación automática. Cada uso o ciclo de LocalReviewer requiere permiso explícito y acotado; la invocación del orquestador no lo concede. Conservar cualquier cancelación previa hasta una autorización nueva que mencione LocalReviewer. Aplicar las reglas de alcance y permiso de `pr-blocker-convergence` en todas las fases.
 
 Si el usuario pide modificar o actualizar **este plugin** en vez de entregar una issue, leer
