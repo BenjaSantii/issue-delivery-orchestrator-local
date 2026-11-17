@@ -91,6 +91,18 @@ class ConfigTests(unittest.TestCase):
         }, clear=True):
             self.assertEqual(settings().linear_self_assignment_labels, ("Sales Force",))
 
+    def test_turboshop_treats_turboreview_as_a_configured_bot(self):
+        from issue_delivery_orchestrator.authorship import classify
+
+        profile = Path(__file__).resolve().parents[1] / "profiles" / "turboshop.json"
+        with patch.dict(os.environ, {
+            "ISSUE_DELIVERY_PROFILE": str(profile),
+            "ISSUE_DELIVERY_ENV_FILE": "/missing/issue-delivery.env",
+        }, clear=True):
+            authorship = classify({"user": {"login": "turboreview[bot]"}, "body": "**Bug**"})
+        self.assertTrue(authorship.automated)
+        self.assertEqual(authorship.source, "turboreview")
+
     def test_rejects_invalid_linear_comments_setting(self):
         profile = Path(__file__).resolve().parents[1] / "profiles" / "turboshop.json"
         with patch.dict(

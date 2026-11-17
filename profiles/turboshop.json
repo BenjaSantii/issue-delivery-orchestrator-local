@@ -33,7 +33,8 @@
   },
   "review": {
     "botNames": [
-      "coderabbit"
+      "coderabbit",
+      "turboreview"
     ],
     "blockerBots": [
       "x100-production"

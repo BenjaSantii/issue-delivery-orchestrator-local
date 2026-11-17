@@ -506,7 +506,9 @@ consultar la PR con `sleep` ni turnos de espera.
 Cada ronda usa los tiempos y autores automatizados declarados por el perfil. En el perfil TurboShop,
 esperar diez minutos de quietud desde el último cambio relevante, con un máximo de veinte minutos
 por ronda y polling cada quince segundos. Procesar sólo problemas concretos de los bots configurados
-y sólo la sección `BLOCKERS` de los `blockerBots` (x100 en TurboShop); ignorar summaries, walkthroughs, sugerencias
+y sólo la sección `BLOCKERS` de los `blockerBots` (x100 en TurboShop). En TurboShop, los hilos en línea de
+TurboReview (`turboreview[bot]`) son de un bot configurado: se procesan en este ciclo y su "Review Summary"
+no es un blocker. Ignorar summaries, walkthroughs, sugerencias
 opcionales y comentarios humanos durante el ciclo automático.
 
 1. Entregar el snapshot completo a `pr-blocker-convergence`; esa skill agrega nuevos blockers, deduplica por causa raíz y decide `FIX`, `SKIP`, `NEEDS_USER_DECISION` o `STOP`.
