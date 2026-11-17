@@ -29,6 +29,8 @@ Do not create missing documentation or instruction files. Do not implement produ
 
 ## Run the interview
 
+In an express run, skip this interview and follow [Express lane](#express-lane) instead.
+
 Interview the user until every decision that materially changes the `Now` implementation is resolved. Ask exactly one question at a time and wait for the answer. Include a recommended answer with every question.
 
 For each question:
@@ -169,6 +171,34 @@ gate (fresh QA with DB verification, refactor review, PR convergence) and change
 fewer QA cases and a QA chat with `medium` effort. Ask the user to approve the lane with the spec;
 when in doubt, omit it.
 
+### Express lane
+
+Use `Lane: express` only when the user asked for express at launch ("express", "hazla express") or
+accepted the agent's one-line proposal. Propose it when the issue qualifies. Eligibility and the
+full flow live in the orchestrator's `references/express-lane.md`; in short: the Linear issue
+already states the problem and the expected result, the work fits one ticket of about 150 product
+lines or fewer, and it touches no concurrency, migrations, auth or permissions, shared contracts,
+or cross-cutting layout or navigation.
+
+In express:
+
+1. Do not interview. Read the issue with `read-linear-issue`, the owning code, tests and every
+   applicable `AGENTS.md`, and answer each question you would have asked with the orchestrator's
+   `references/decision-policy.md`.
+2. Draft in one go the canonical spec with `Lane: express` and `Prototype: no`, the single ticket
+   in the ticket publisher's format, and a QA Script of at most four cases. Keep the Risk Catalog,
+   Testing Decisions and DB evidence rules unchanged.
+3. Present spec and ticket together and ask for ONE approval. Ask a question only when the
+   decision policy reserves it for the user, and batch every such question into that same
+   message with a recommended answer.
+4. If the code shows the issue does not qualify, drop the lane, tell the user why in one line and
+   continue with the normal interview.
+
+The spec publisher rejects `Lane: express` with `concurrency` or `roles-authorization` applying or
+more than four QA cases; the ticket publisher rejects more than one ticket or an `Estimated size`
+above 150. After approval, publish both without a second approval. Record decisions taken without
+the user's approval in the run's `decisions.md`.
+
 ### Prototype
 
 Write `Prototype: yes` below `Spec ID` when the change is visually important: a new screen, a
@@ -194,7 +224,7 @@ Produce the following headings in exactly this order. Fill every section with co
 
 ```md
 Spec ID: SPEC-...
-Lane: <opcional; `small` sólo si cumple los criterios de vía chica>
+Lane: <opcional; `small` o `express` sólo si cumple los criterios de esa vía>
 Prototype: <yes | no>
 QA Model: <modelo del QA según la dificultad>
 QA Effort: <esfuerzo del QA según la dificultad>

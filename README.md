@@ -291,6 +291,14 @@ verifies persisted database consequences. See [run metrics](skills/issue-deliver
 and [independent QA](skills/issue-delivery-orchestrator/references/fresh-qa.md). The contract is
 versioned in new run state; existing deliveries retain their previous behavior.
 
+Small, well-specified issues can take the [express lane](skills/issue-delivery-orchestrator/references/express-lane.md):
+ask for "express" when launching, or accept the agent's proposal. It drafts spec, one ticket and
+the QA Script without an interview and asks for one approval, skips Refactor, and runs the QA
+Script in the main chat instead of a fresh QA conversation. CI parity, PR review convergence,
+Linear publication and evidence stay the same. After the Grill, every run follows the
+[decision policy](skills/issue-delivery-orchestrator/references/decision-policy.md) before asking
+the user anything.
+
 Open a new Codex or Claude Code session in the intended product worktree and invoke the
 `issue-delivery-orchestrator` skill with a Linear issue. For a host-independent CLI run, start the
 agent in the prepared checkout; Vanilla will be selected automatically when no Codex or Superset

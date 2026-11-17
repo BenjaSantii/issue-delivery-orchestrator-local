@@ -68,7 +68,9 @@ que el spec nombre. No agregar casos que no falsen un criterio del spec.
 ## Ejecutar
 
 En runs con `observabilityVersion: 1`, ejecutar desde la conversación independiente de
-[fresh-qa.md](fresh-qa.md). Incluir reviewSessionId y los artefactos de persistencia por caso;
+[fresh-qa.md](fresh-qa.md), salvo en la vía express, donde lo ejecuta el chat principal y el
+resultado declara `"qaMode": "main-session"` en vez de `reviewSessionId`
+([express-lane.md](express-lane.md)). Incluir reviewSessionId y los artefactos de persistencia por caso;
 un PASS de pantalla/API no sustituye comprobar las consecuencias en DB. El controlador consume
 el resultado y publica, sin alterar el contrato de runs anteriores.
 

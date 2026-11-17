@@ -100,7 +100,10 @@ not because implementation is difficult.
    splitting is the user's decision and keeping one PR is a valid answer.
    At or below that limit, keep one PR per issue. Touching several apps/owners or exceeding an
    initial estimate does not by itself justify proposing a split.
-6. Present the complete breakdown and obtain explicit approval before publishing.
+6. Present the complete breakdown and obtain explicit approval before publishing. In an express
+   run (`Lane: express` in the spec) the single ticket was approved together with the spec: do
+   not ask again. The publisher rejects an express spec with more than one ticket or an
+   `Estimated size` above 150.
 7. Immediately call out every HITL ticket with ID, title, reason, required action, dependencies and
    approximate pause point.
 

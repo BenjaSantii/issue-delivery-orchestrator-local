@@ -1,7 +1,9 @@
 # QA en conversación nueva y consecuencias persistidas
 
 Aplica sólo a runs con `observabilityVersion: 1`. No modificar el contrato ni los chats de
-ejecuciones existentes. Complementa la revisión de código. LocalReviewer es opcional en todos los
+ejecuciones existentes. Los runs con `Lane: express` no abren conversación de QA: el chat principal
+ejecuta el guion y escribe `"qaMode": "main-session"`, según [express-lane.md](express-lane.md);
+"Qué comprobar" sigue aplicando. Complementa la revisión de código. LocalReviewer es opcional en todos los
 modos. La calibración con ejemplos
 humanos queda fuera de esta implementación.
 

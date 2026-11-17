@@ -41,6 +41,9 @@ canonical heading in the order produced by `issue-delivery-grill`. Require the e
 `State model` when their categories apply). Reject placeholders and unresolved material decisions.
 `publish-linear-block --block spec` enforces these structural rules and lists every violation;
 return to `issue-delivery-grill` to fix the content instead of editing the table to pass.
+It also rejects `Lane: small` with concurrency or more than four QA cases, and `Lane: express`
+with concurrency or roles-authorization applying or more than four QA cases. When a lane is
+rejected, drop the line and return to the normal flow; do not trim the spec to fit the lane.
 
 ## Workflow
 

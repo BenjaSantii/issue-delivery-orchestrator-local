@@ -212,6 +212,15 @@ una ronda (ver Convergencia remota); la evidencia de esos cambios son tests y pa
 
 Prohibir el handoff hasta disponer de evidencia posterior al último cambio para cada superficie afectada, con SHA verificado. Para UI, exigir PASS del reviewer del modo; para las demás, exigir el test, comando o análisis declarado en el ledger. Si la herramienta necesaria no está disponible, bloquear y explicar el impedimento; no degradar la cobertura.
 
+## Vía express
+
+Si el usuario pide express al lanzar ("express", "hazla express"), o la issue cumple la
+elegibilidad y el usuario acepta la propuesta, leer
+[express-lane.md](references/express-lane.md) completo y seguirlo: Grill sin entrevista con una
+sola aprobación de spec y ticket, sin Refactor, QA ejecutado por este chat con
+`"qaMode": "main-session"` y reparación sin preguntar de hallazgos obvios. Si el código muestra que
+la issue no cumple, volver al flujo normal y decirlo. El resto de esta skill aplica igual.
+
 ## 1. Grill
 
 1. Leer la issue, el repositorio y todos los `AGENTS.md` aplicables.
@@ -292,6 +301,8 @@ python3 <plugin-root>/scripts/issue-delivery <issue> checkpoint --phase implemen
 
 ## 3. Refactor
 
+En un run express no hay Refactor: el checkpoint de `implement` pasa directo a `manual-revision`.
+
 Leer [refactor-review.md](references/refactor-review.md) completamente. Revisar el diff de
 implementación contra los `AGENTS.md` aplicables y ejecutar cada gate de esa referencia.
 
@@ -328,6 +339,10 @@ Si un `restack` ocurre después de un QA terminado, fijar el QA al nuevo HEAD co
 ("Tras un rebase o restack" en fresh-qa.md); no repetir el QA ni marcar sus casos como WAIVED.
 
 ## 4. Revisión manual
+
+En un run express no abrir conversación de QA: el chat principal ejecuta el QA Script según
+[express-lane.md](references/express-lane.md). Lo demás de esta sección (runtime, reviewer del
+modo, DB, evidencia, `publish-run` y checkpoint) aplica igual.
 
 Si `observabilityVersion: 1`, leer [fresh-qa.md](references/fresh-qa.md) y abrir/registrar una
 conversación nueva de QA, con el mismo runtime y los artefactos aprobados fijados al SHA.
