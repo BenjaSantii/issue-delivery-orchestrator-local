@@ -102,7 +102,7 @@ from .state import (
     now,
 )
 from .util import ensure_within, read_json, run
-from . import implement_worker, observability_cli, runtime_recipe, waits
+from . import implement_worker, observability_cli, project_checks, runtime_recipe, waits
 from .superset_launch import (
     DEFAULT_AGENT as SUPERSET_DEFAULT_AGENT,
     build_superset_launch,
@@ -454,6 +454,18 @@ def parser() -> argparse.ArgumentParser:
 
     actions.add_parser("review-gate")
 
+    actions.add_parser(
+        "project-checks",
+        help="Run the profile's project checks against the run's diff",
+    )
+    accept_check = actions.add_parser(
+        "accept-check",
+        help="Record an exception, with its reason, for a project check finding that allows one",
+    )
+    accept_check.add_argument("--check", required=True)
+    accept_check.add_argument("--id", required=True, dest="finding_id")
+    accept_check.add_argument("--reason", required=True)
+
     cleanup = actions.add_parser("cleanup")
     cleanup.add_argument("--force", action="store_true")
     return result
@@ -545,6 +557,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
             assert_validation_current(state)
         if args.phase == "review-convergence":
             assert_review_converged(state)
+        checks = project_checks.assert_project_checks(state, args.phase)
         measurement = state.get("phaseMeasurement")
         complete_phase(state, args.phase, artifacts)
         metric = observability_cli.phase_completed(
@@ -552,7 +565,16 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         stopped: list[int] = []
         if state["status"] == "completed_preserved":
             stopped = stop_owned_processes(state)
-        return {"state": _public_state(state), "stoppedPids": stopped, "metrics": metric}
+        return {
+            "state": _public_state(state),
+            "stoppedPids": stopped,
+            "metrics": metric,
+            "projectChecks": checks,
+        }
+    if args.action == "project-checks":
+        return project_checks.evaluate(state)
+    if args.action == "accept-check":
+        return project_checks.accept(state, args.check, args.finding_id, args.reason)
     if args.action == "block":
         stopped = stop_owned_processes(state)
         block_run(state, args.reason, args.decision)
@@ -1676,6 +1698,7 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
         "qaSession": state.get("qaSession"),
         "pr": state.get("pr"),
         "prTarget": pr_target(state),
+        "projectCheckExceptions": state.get("projectCheckExceptions", []),
         "stack": state.get("stack"),
         "size": (state.get("size") or {}).get("lastCheck"),
         "blocker": state.get("blocker"),

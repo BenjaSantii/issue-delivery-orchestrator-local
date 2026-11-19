@@ -47,6 +47,7 @@ class Settings:
     codex_worktree_roots: tuple[str, ...]
     superset_worktree_roots: tuple[str, ...]
     linear_self_assignment_labels: tuple[str, ...] = ()
+    project_checks: tuple["ProjectCheck", ...] = ()
 
     def public_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -127,6 +128,7 @@ def settings() -> Settings:
             else ()
         ),
         slicing=_slicing(data.get("slicing")),
+        project_checks=_project_checks(data.get("projectChecks")),
         linear_comments_enabled=_environment_boolean(
             "LINEAR_COMMENTS_ENABLED",
             default=True,
@@ -206,6 +208,38 @@ def _slicing(raw: Any) -> SlicingSettings:
             else defaults.max_stack_depth
         ),
     )
+
+
+@dataclass(frozen=True)
+class ProjectCheck:
+    name: str
+    script: str
+    command: tuple[str, ...]
+
+
+def _project_checks(raw: Any) -> tuple[ProjectCheck, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise OrchestrationError("Profile field projectChecks must be an array")
+    checks = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise OrchestrationError("Each projectChecks entry must be an object")
+        script = _required_string(item, "script")
+        if Path(script).is_absolute() or ".." in Path(script).parts:
+            raise OrchestrationError("projectChecks script must be a safe relative path")
+        checks.append(
+            ProjectCheck(
+                name=_required_string(item, "name"),
+                script=script,
+                command=_string_tuple(item, "command"),
+            )
+        )
+    names = [check.name for check in checks]
+    if len(set(names)) != len(names):
+        raise OrchestrationError("projectChecks names must be unique")
+    return tuple(checks)
 
 
 @dataclass(frozen=True)

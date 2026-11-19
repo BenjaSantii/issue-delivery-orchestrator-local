@@ -71,5 +71,18 @@
     "markerPrefix": "turboshop-dev-loop",
     "uiSection": "UI enhancements",
     "selfAssignmentLabels": ["Sales Force"]
-  }
+  },
+  "projectChecks": [
+    {
+      "name": "sales-force",
+      "script": "tools/orchestrator/sales-force/check.mjs",
+      "command": [
+        "node",
+        "tools/orchestrator/sales-force/check.mjs",
+        "--base",
+        "{base}",
+        "--json"
+      ]
+    }
+  ]
 }

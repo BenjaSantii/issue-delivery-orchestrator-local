@@ -299,6 +299,29 @@ Completar `implement` sólo con todos los tickets aceptados:
 python3 <plugin-root>/scripts/issue-delivery <issue> checkpoint --phase implement
 ```
 
+### Checks del proyecto
+
+El perfil puede declarar `projectChecks`: scripts que el repositorio trae y que sólo corre el
+orquestador, nunca CI ni hooks de git. Los checkpoints de `implement`, `refactor` y
+`review-convergence` los ejecutan contra el diff del run y bloquean con cada finding. Un check cuyo
+script no existe en el worktree se salta. Para verlos antes del checkpoint:
+
+```bash
+python3 <plugin-root>/scripts/issue-delivery <issue> project-checks
+```
+
+- Corregir cada finding con lo que dice su mensaje. No rodearlo moviendo la explicación a un
+  string, un nombre o un log.
+- Un finding marcado `acceptable` admite una excepción con motivo. Registrarla sólo cuando el
+  mensaje no aplica al cambio, e informar cada excepción en el handoff:
+
+  ```bash
+  python3 <plugin-root>/scripts/issue-delivery <issue> accept-check --check <nombre> --id <id> --reason "<motivo>"
+  ```
+
+- Un finding sin `acceptable`, como un comentario nuevo o un `eslint-disable`, no admite excepción.
+  Si no se puede corregir, bloquear con `block --decision` y el motivo para que decida el usuario.
+
 ## 3. Refactor
 
 En un run express no hay Refactor: el checkpoint de `implement` pasa directo a `manual-revision`.
