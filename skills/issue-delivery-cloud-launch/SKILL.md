@@ -1,6 +1,6 @@
 ---
 name: issue-delivery-cloud-launch
-description: "Iniciar en Conductor Cloud una o más issues de Linear que ya tienen spec y tickets aprobados: verificar que estén listas y no bloqueadas, y crear un workspace cloud con las skills del toolbox y un primer mensaje que arranca Issue Delivery Orchestrator en modo conductor. Usar desde la máquina local cuando el usuario pida mandar, lanzar o iniciar issues en Conductor o en la nube."
+description: "Iniciar en Conductor Cloud una o más issues de Linear que ya tienen spec y tickets aprobados, o con --express una issue chica sin spec que hará el Grill express en Conductor: verificar que estén listas y no bloqueadas, y crear un workspace cloud con las skills del toolbox y un primer mensaje que arranca Issue Delivery Orchestrator en modo conductor. Usar desde la máquina local cuando el usuario pida mandar, lanzar o iniciar issues en Conductor o en la nube."
 ---
 
 # Lanzar issues en Conductor Cloud
@@ -47,6 +47,11 @@ el run completo (Implement → PR) en una VM de Conductor con el reviewer `playw
    (`Ticket ID`), o tiene un bloqueador abierto. Un bloqueador que además es su issue padre se
    trata como stack: el workspace parte de la rama del padre y el run usa `--stack-parent`; esa
    rama debe existir en origin.
+
+   Con `--express`, una issue sin spec ni tickets no bloquea: el plan muestra
+   `startsAt: grill` y el mensaje inicial arranca el orquestador, que hace el Grill express en la
+   sesión Generador y espera allí la aprobación del usuario antes de publicar. Usarlo sólo cuando
+   el usuario pida la vía express. Sin `--qa-model`, el QA usa el modelo que escriba ese spec.
 2. Revisar `workspaceBaseBehindPrTarget`. Si la base va detrás de la rama objetivo de las PRs y el
    spec depende de trabajo que sólo está en esa rama, proponer `--base <prTarget>`.
 3. Mostrar al usuario, por issue: spec y tickets detectados, base o stack, agente y el mensaje
@@ -120,5 +125,6 @@ LocalReviewer.
   según [conductor-cloud.md](../issue-delivery-orchestrator/references/conductor-cloud.md) e inicia
   el orquestador con `--mode conductor`, indicando que el spec y los tickets ya fueron aprobados.
 
-No lanzar issues sin spec y tickets aprobados: para esas, el siguiente paso es el Grill
-(`issue-delivery-grill`) en una sesión interactiva.
+No lanzar issues sin spec y tickets aprobados, salvo con `--express`: para esas, el siguiente paso
+es el Grill (`issue-delivery-grill`) en una sesión interactiva. Con `--express`, avisar al usuario
+que debe abrir la sesión Generador en Conductor para aprobar el spec y el ticket.

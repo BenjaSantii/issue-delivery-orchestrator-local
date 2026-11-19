@@ -124,6 +124,7 @@ from .t3_launch import (
     DEFAULT_PROVIDER as T3_DEFAULT_PROVIDER,
     build_t3_launch,
     create_t3_thread,
+    needs_grill,
 )
 
 
@@ -184,6 +185,11 @@ def parser() -> argparse.ArgumentParser:
     cloud.add_argument("--agent", default="claude", choices=("claude", "codex"))
     cloud.add_argument("--model", help="Model for the Conductor sessions (default per agent)")
     cloud.add_argument("--conductor-project", help="Conductor project ID")
+    cloud.add_argument(
+        "--express",
+        action="store_true",
+        help="Without approved spec and tickets, run the express Grill in the Conductor chat",
+    )
     cloud.add_argument(
         "--confirm",
         action="store_true",
@@ -920,8 +926,9 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
     repository = _repository(configuration.repository, None)
     linear, credential_source = _verified_linear()
     readiness = delivery_readiness(linear, args.issue, configuration.linear_marker_prefix)
-    if readiness["problems"]:
+    if readiness["problems"] and not args.express:
         raise RunBlocked("; ".join(readiness["problems"]))
+    grill = needs_grill(readiness)
     if not args.stack_parent:
         drop_merged_blockers(readiness, repository, configuration.pr_target_branch)
     stack_parent = stack_parent_for(readiness, args.stack_parent)
@@ -940,10 +947,12 @@ def cloud_launch(args: argparse.Namespace) -> dict[str, Any]:
         qa_model=args.qa_model,
         qa_effort=args.qa_effort,
         implement_model=args.implement_model,
+        grill=grill,
     )
     plan = {
         "credentialSource": credential_source,
         "readiness": readiness,
+        "startsAt": "grill" if grill else "implement",
         "stackParent": stack_parent,
         "qa": launch["qa"],
         "implementModel": launch["implementModel"],

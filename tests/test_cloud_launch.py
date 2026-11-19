@@ -265,6 +265,15 @@ class BuildLaunchTests(unittest.TestCase):
         self.assertEqual(self.launch(configuration)["qa"],
                          {"model": "sonnet-5-5-1m", "effort": "medium", "source": "default"})
 
+    def test_express_grill_launch_leaves_the_qa_model_to_the_spec_it_will_write(self):
+        configuration = self.configuration()
+        launch = self.launch(configuration, grill=True)
+        self.assertIsNone(launch["qa"])
+        self.assertNotIn("--qa-model", launch["message"])
+        self.assertIn("Grill express", launch["message"])
+        launch = self.launch(configuration, grill=True, qa_model="opus-5-5-1m")
+        self.assertIn("--qa-model opus-5-5-1m`", launch["message"])
+
     def test_codex_launch_keeps_qa_inheriting_without_a_choice(self):
         launch = self.launch(self.configuration(), agent="codex")
         self.assertIsNone(launch["qa"])
@@ -282,6 +291,19 @@ class MessageTests(unittest.TestCase):
         self.assertIn("TICKET-001, TICKET-002", message)
         self.assertIn("mobile-web-reviewer", message)
         self.assertIn("no las sustituyas leyendo archivos a mano", message)
+
+    def test_express_grill_message_starts_the_run_and_waits_for_one_approval(self):
+        readiness = delivery_readiness(FakeLinear(issue(description="")), "TS-1", PREFIX)
+        message = launch_message(readiness, base="test", stack_parent=None, grill=True)
+
+        start = message.index("Inicia el orquestador")
+        self.assertLess(start, message.index("Grill express"))
+        self.assertIn("--mode conductor --base test", message)
+        self.assertIn("express-lane.md", message)
+        self.assertIn("una sola aprobación para el spec y el ticket juntos", message)
+        self.assertIn("Espera la respuesta del usuario en este chat antes de publicar", message)
+        self.assertIn("sigue aquí con el Grill normal", message)
+        self.assertNotIn("ya aprobó el spec", message)
 
     def test_stacked_message_uses_stack_parent(self):
         readiness = delivery_readiness(FakeLinear(issue()), "TS-1", PREFIX)

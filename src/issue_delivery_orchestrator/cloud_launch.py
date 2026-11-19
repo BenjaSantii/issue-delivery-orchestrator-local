@@ -198,6 +198,7 @@ def build_launch(
     qa_model: str | None = None,
     qa_effort: str | None = None,
     implement_model: str | None = None,
+    grill: bool = False,
 ) -> dict[str, Any]:
     if agent not in AGENTS:
         raise OrchestrationError(f"Unsupported Conductor agent {agent}; use {', '.join(AGENTS)}")
@@ -212,11 +213,13 @@ def build_launch(
     if not _remote_branch_exists(repository, workspace_base):
         raise RunBlocked(f"Branch {workspace_base} does not exist on origin")
 
-    qa = qa_configuration_for(readiness, agent, qa_model, qa_effort)
+    # Before the Grill there is no spec yet: its QA Model line, read later by qa-session, decides.
+    qa = (qa_configuration_for(readiness, agent, qa_model, qa_effort)
+          if qa_model or not grill else None)
     # Workers inherit the principal's model unless the launch names one: the fresh context, not a
     # cheaper model, is what keeps implementation affordable.
     message = launch_message(readiness, base=base, stack_parent=stack_parent, qa=qa,
-                             implement_model=implement_model)
+                             implement_model=implement_model, grill=grill)
     name = f"[{readiness['identifier']}] {readiness['title']}"
     arguments = [
         "workspace",
@@ -293,6 +296,7 @@ def launch_message(
     stack_parent: str | None,
     qa: dict[str, str] | None = None,
     implement_model: str | None = None,
+    grill: bool = False,
 ) -> str:
     identifier = readiness["identifier"]
     flags = f"--mode conductor --stack-parent {stack_parent}" if stack_parent else (
@@ -302,7 +306,25 @@ def launch_message(
     if qa:
         flags += f" --qa-model {qa['model']}" + (f" --qa-effort {qa['effort']}" if qa["effort"] else "")
     command = f"`{flags}`"
-    tickets = ", ".join(readiness["ticketIds"])
+    if grill:
+        approval = (
+            "3. La issue no tiene spec ni tickets aprobados y el usuario pidió la vía express al "
+            "lanzar. Haz en este chat el Grill express según "
+            "`<plugin-root>/skills/issue-delivery-orchestrator/references/express-lane.md`: redacta "
+            "de una vez el spec con `Lane: express`, el ticket y el QA Script, y pide una sola "
+            "aprobación para el spec y el ticket juntos. Espera la respuesta del usuario en este "
+            "chat antes de publicar. Si la issue no califica para express, dilo en una línea con "
+            "la razón y sigue aquí con el Grill normal, una pregunta a la vez. Con la aprobación, "
+            "publica spec y ticket y continúa a Implement.\n"
+        )
+    else:
+        tickets = ", ".join(readiness["ticketIds"])
+        approval = (
+            f"3. El usuario ya aprobó el spec {readiness['specId']} y los tickets {tickets}, "
+            "publicados en Linear. Reconcilia esos bloques con el repositorio; si no hay "
+            "diferencias, registra la aprobación vigente y continúa a Implement sin repetir el "
+            "Grill. Si la reconciliación cambia el alcance, pide aprobación antes de seguir.\n"
+        )
     return (
         f"Entrega {identifier} ({readiness['title']}) con Issue Delivery Orchestrator en "
         "Conductor Cloud.\n\n"
@@ -314,10 +336,7 @@ def launch_message(
         "`/issue-delivery-orchestrator-local:issue-delivery-orchestrator`; Codex: "
         f"`$issue-delivery-orchestrator`) para {identifier} con `--worktree` igual a la raíz de "
         f"este checkout y {command}.\n"
-        f"3. El usuario ya aprobó el spec {readiness['specId']} y los tickets {tickets}, "
-        "publicados en Linear. Reconcilia esos bloques con el repositorio; si no hay "
-        "diferencias, registra la aprobación vigente y continúa a Implement sin repetir el "
-        "Grill. Si la reconciliación cambia el alcance, pide aprobación antes de seguir.\n"
+        f"{approval}"
         "4. Verifica las historias UI con `issue-delivery-playwright-review` y las de teléfono "
         "con el agente `mobile-web-reviewer`.\n"
         "5. En Conductor no ejecutes ni esperes LocalReviewer: no es requisito previo a la PR. "
