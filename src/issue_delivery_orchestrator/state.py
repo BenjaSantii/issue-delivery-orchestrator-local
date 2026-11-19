@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import waits
 from .config import settings
 from .errors import OrchestrationError, RunBlocked
 from .spec_lint import approved_lane
@@ -235,6 +236,9 @@ def block_run(state: dict[str, Any], reason: str, decision: bool = False) -> Non
 def resume_run(state: dict[str, Any]) -> None:
     if state.get("status") not in {"blocked", "needs_user_decision", "completed_preserved"}:
         raise RunBlocked(f"Run is not resumable from status {state.get('status')}")
+    blocker = state.get("blocker") or {}
+    if blocker.get("createdAt"):
+        waits.record(state, "human", "blocked", blocker["createdAt"], now())
     state["status"] = "active"
     state["blocker"] = None
     save_state(state)

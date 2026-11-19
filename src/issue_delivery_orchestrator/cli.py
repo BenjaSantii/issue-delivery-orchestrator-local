@@ -102,7 +102,7 @@ from .state import (
     now,
 )
 from .util import ensure_within, read_json, run
-from . import implement_worker, observability_cli, runtime_recipe
+from . import implement_worker, observability_cli, runtime_recipe, waits
 from .superset_launch import (
     DEFAULT_AGENT as SUPERSET_DEFAULT_AGENT,
     build_superset_launch,
@@ -647,12 +647,17 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
             raise RunBlocked("Cannot wait for review before a PR has been recorded")
         if not 0 < args.quiet_seconds <= args.max_seconds:
             raise OrchestrationError("quiet-seconds must be positive and no greater than max-seconds")
-        return wait_for_quiet_review(
-            state,
-            quiet_seconds=args.quiet_seconds,
-            max_seconds=args.max_seconds,
-            poll_seconds=args.poll_seconds,
-        )
+        started = now()
+        try:
+            return wait_for_quiet_review(
+                state,
+                quiet_seconds=args.quiet_seconds,
+                max_seconds=args.max_seconds,
+                poll_seconds=args.poll_seconds,
+            )
+        finally:
+            waits.record(state, "infrastructure", "wait-review", started, now())
+            save_state(state)
     if args.action == "acknowledge-blocker":
         if not state.get("pr"):
             raise RunBlocked("Cannot acknowledge a blocker before a PR has been recorded")
