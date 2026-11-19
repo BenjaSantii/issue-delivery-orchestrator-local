@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from . import fresh_qa, metrics
+from . import fresh_qa, metrics, waits
 from .cloud_launch import _json_output, _session_transcript, conductor_cli
 from .errors import OrchestrationError, RunBlocked
 from .linear import upsert_marker_block
@@ -174,9 +174,15 @@ def dispatch(state: dict[str, Any], args: argparse.Namespace, linear_factory: Ca
                 raise RunBlocked("The chat is still working; import its usage later")
             time.sleep(IDLE_POLL_SECONDS)
         try:
-            usage = conductor_usage(_session_transcript(cli, args.session), args.session)
+            transcript = _session_transcript(cli, args.session)
+            usage = conductor_usage(transcript, args.session)
         except OrchestrationError:
+            transcript = None
             usage = {"sessionId": args.session, "requests": {}, "availability": "unavailable"}
+        if transcript is not None:
+            waits.keep_conversation(state, args.session, args.label,
+                                    waits.conversation_signals(transcript, args.session))
+            save_state(state)
         item = metrics.record_session(state, args.label, usage)
         return {"metric": item, "linear": _publish_safely(state, linear_factory, configuration)}
     if args.action == "publish-metrics":
