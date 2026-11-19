@@ -179,6 +179,23 @@ class MetricsTests(unittest.TestCase):
         self.assertIn("- Codex · gpt-6.1-sol: 110 tokens", report)
         self.assertIn("1038 tokens", report)
 
+    def test_report_splits_each_unit_into_waits_checks_and_execution(self):
+        self.start("phase-grill", "phase")
+        self.finish("phase-grill")
+        self.start("TICKET-001")
+        self.finish("TICKET-001")
+        self.state["conversations"] = {"main": {
+            "label": "Generador", "coverage": ["2026-10-20T09:00:00Z", "2026-10-20T11:00:00Z"],
+            "humanGaps": [["2026-10-20T10:00:02Z", "2026-10-20T10:00:06Z"]],
+            "checks": [["2026-10-20T10:00:07Z", "2026-10-20T10:00:09Z"]]}}
+        report = metrics.report(self.state)
+        self.assertIn("Espera humana (s) | Espera infraestructura (s) | Tests/lint (s) | Ejecución (s)",
+                      report)
+        self.assertIn("| phase-grill / 1 | phase | N/D | gpt-6.1-sol / high | PASS | 10.0 | 4.0 | 0.0 | 2.0 | 6.0 |",
+                      report)
+        del self.state["conversations"]
+        self.assertIn("| PASS | 10.0 | 0.0 (sin chat) | 0.0 | N/D | N/D |", metrics.report(self.state))
+
     def test_session_usage_gets_its_own_row_and_reimports_without_double_counting(self):
         trace = claude_trace()
         trace["data"].append({"sessionId": "claude-session", "type": "userMessage"})

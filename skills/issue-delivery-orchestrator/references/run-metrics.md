@@ -93,6 +93,24 @@ se muestran como N/D. No estimar tokens ni deducir dinero facturado de una suscr
 El controlador debe volver a importar el uso pendiente al terminar el turno y antes del resumen
 final; el propio consumo de ese último informe puede quedar pendiente para una lectura externa.
 
+## Esperas automáticas
+
+El motor mide las esperas sin que el agente las reporte. No hay que agregar intervalos al
+recibo para estos casos:
+
+- `resume` guarda como espera humana el tiempo entre `block` y la reanudación.
+- `wait-review` guarda su duración como espera de infraestructura.
+- `metrics-session` guarda, del chat importado, el tiempo entre el fin de un turno y el siguiente
+  mensaje como espera humana, y la duración de cada comando de test, lint o typecheck. Los chats
+  con etiqueta `QA...` aportan tests, no esperas humanas.
+
+El comentario muestra por unidad la espera humana, la de infraestructura, el tiempo de tests/lint
+y la ejecución, que es el total menos las esperas. Las esperas solapadas cuentan una vez. Sin un
+chat principal importado que cubra la unidad, la ejecución queda N/D y la espera humana se marca
+`(sin chat)`, porque sólo incluye los bloqueos. Por eso conviene importar el chat principal con
+`metrics-session` antes del resumen final, como indica la sección anterior. Un Grill hecho en
+otra conversación, por ejemplo local antes de `cloud-launch`, no entra en estas mediciones.
+
 ## Linear e interpretación
 
 metrics-finish, metrics-usage y los checkpoints actualizan un único comentario

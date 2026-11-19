@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from . import waits
 from .errors import OrchestrationError, RunBlocked
 from .metrics_receipt import observations, timestamp
 from .slicing import classify
@@ -185,13 +186,30 @@ def _value(request: dict[str, Any], field: str) -> Any:
     return request.get(field)
 
 
+def _wait_cells(state: dict[str, Any], item: dict[str, Any]) -> list[str]:
+    if item["kind"] == "session" or not item.get("startedAt") or not item.get("finishedAt"):
+        return ["N/D"] * 4
+    split = waits.breakdown(state, item["startedAt"], item["finishedAt"])
+    human = str(split["humanWaitSeconds"])
+    if not split["conversationCovered"]:
+        human += " (sin chat)"
+    return [human, str(split["infrastructureWaitSeconds"]),
+            *("N/D" if split[key] is None else str(split[key])
+              for key in ("checkSeconds", "executionSeconds"))]
+
+
 def report(state: dict[str, Any]) -> str:
     marker = f"Métricas de entrega — {state['runId']}"
     lines = [f"### {marker}", "", "Tokens reportados; N/D significa no disponible. "
              "Caché es parte de entrada. Los consumos compartidos no se reparten entre tickets.", "",
+             "Espera humana cuenta los bloqueos y el tiempo entre el fin de un turno del chat principal "
+             "y el siguiente mensaje; espera de infraestructura cuenta `wait-review`. Tests/lint es el "
+             "tiempo de esos comandos en los chats importados y es parte de la ejecución. "
+             "Sin chat importado que cubra la unidad, la ejecución queda N/D.", "",
              "| Unidad / intento | Tipo | Proveedor | Modelo / esfuerzo | Estado | Tiempo total (s) | "
+             "Espera humana (s) | Espera infraestructura (s) | Tests/lint (s) | Ejecución (s) | "
              "Tokens entrada / salida / caché | Producto + / − | Tests + / − |",
-             "| -- | -- | -- | -- | -- | -- | -- | -- | -- |"]
+             "| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |"]
     unique: dict[str, Any] = {}
     all_records = records(state)
     details = []
@@ -212,7 +230,7 @@ def report(state: dict[str, Any]) -> str:
         cells = [f"{item['unit']} / {item['attempt']}", item["kind"], item.get("provider", "N/D"),
                  f"{item['model']} / {item['effort']}", item["status"],
                  str(round(item["wallSeconds"], 1)) if item.get("wallSeconds") is not None else "N/D",
-                 tokens]
+                 *_wait_cells(state, item), tokens]
         cells += [f"{delta[k]['added']} / {delta[k]['deleted']}" if k in delta else "N/D"
                   for k in ("product", "test")]
         lines.append("| " + " | ".join(str(c).replace("|", "\\|").replace("\n", " ") for c in cells) + " |")
